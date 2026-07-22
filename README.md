@@ -1,7 +1,7 @@
 ## 제출 정보
 
-- **작동 링크**: (배포 후 채워짐)
-- **소스 코드**: (배포 후 채워짐)
+- **작동 링크**: https://interview-sync-nu.vercel.app/interviews
+- **소스 코드**: https://github.com/risa02076-code/interview-sync
 - **개선 사항 한 줄**: 클라이언트가 Supabase를 직접 호출하던 이전 방식 대신, Next.js API 라우트를 별도 백엔드 계층으로 두어 매칭·재조율 로직을 서버에서만 처리하도록 분리함
 
 ---
