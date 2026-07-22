@@ -4,7 +4,6 @@ import { AuthButton } from "@/components/auth-button";
 import { Hero } from "@/components/hero";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { ConnectSupabaseSteps } from "@/components/tutorial/connect-supabase-steps";
-import { SignUpUserSteps } from "@/components/tutorial/sign-up-user-steps";
 import { hasEnvVars } from "@/lib/utils";
 import Link from "next/link";
 import { Suspense } from "react";
@@ -32,9 +31,23 @@ export default function Home() {
         </nav>
         <div className="flex-1 flex flex-col gap-20 max-w-5xl p-5">
           <Hero />
-          <main className="flex-1 flex flex-col gap-6 px-4">
-            <h2 className="font-medium text-xl mb-4">Next steps</h2>
-            {hasEnvVars ? <SignUpUserSteps /> : <ConnectSupabaseSteps />}
+          <main className="flex-1 flex flex-col gap-6 px-4 items-center text-center">
+            <h2 className="font-medium text-2xl">인터뷰싱크 — 면접 일정 자동 매칭</h2>
+            <p className="max-w-xl text-muted-foreground">
+              후보자 희망시간과 면접관·회의실 캘린더를 자동으로 대조해 면접 일정을 확정하고,
+              변경이 생기면 자동으로 재조율합니다.
+            </p>
+            <Link
+              href="/interviews"
+              className="rounded-md bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              조율 대시보드 열기 →
+            </Link>
+            {!hasEnvVars && (
+              <div className="w-full max-w-xl">
+                <ConnectSupabaseSteps />
+              </div>
+            )}
           </main>
         </div>
 

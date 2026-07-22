@@ -1,109 +1,44 @@
-<a href="https://demo-nextjs-with-supabase.vercel.app/">
-  <img alt="Next.js and Supabase Starter Kit - the fastest way to build apps with Next.js and Supabase" src="https://demo-nextjs-with-supabase.vercel.app/opengraph-image.png">
-  <h1 align="center">Next.js and Supabase Starter Kit</h1>
-</a>
+## 제출 정보
 
-<p align="center">
- The fastest way to build apps with Next.js and Supabase
-</p>
+- **작동 링크**: (배포 후 채워짐)
+- **소스 코드**: (배포 후 채워짐)
+- **개선 사항 한 줄**: 클라이언트가 Supabase를 직접 호출하던 이전 방식 대신, Next.js API 라우트를 별도 백엔드 계층으로 두어 매칭·재조율 로직을 서버에서만 처리하도록 분리함
 
-<p align="center">
-  <a href="#features"><strong>Features</strong></a> ·
-  <a href="#demo"><strong>Demo</strong></a> ·
-  <a href="#deploy-to-vercel"><strong>Deploy to Vercel</strong></a> ·
-  <a href="#clone-and-run-locally"><strong>Clone and run locally</strong></a> ·
-  <a href="#feedback-and-issues"><strong>Feedback and issues</strong></a>
-  <a href="#more-supabase-examples"><strong>More Examples</strong></a>
-</p>
-<br/>
+---
 
-## Features
+# 인터뷰싱크 (Interview Sync)
 
-- Works across the entire [Next.js](https://nextjs.org) stack
-  - App Router
-  - Pages Router
-  - Proxy
-  - Client
-  - Server
-  - It just works!
-- supabase-ssr. A package to configure Supabase Auth to use cookies
-- Password-based authentication block installed via the [Supabase UI Library](https://supabase.com/ui/docs/nextjs/password-based-auth)
-- Styling with [Tailwind CSS](https://tailwindcss.com)
-- Components with [shadcn/ui](https://ui.shadcn.com/)
-- Optional deployment with [Supabase Vercel Integration and Vercel deploy](#deploy-your-own)
-  - Environment variables automatically assigned to Vercel project
+면접 일정 자동 매칭 서비스 — 후보자 희망시간 · 면접관 캘린더 · 회의실을 자동으로 대조해 면접 일정을 확정하고, 변경 시 자동으로 재조율한다.
 
-## Demo
+PRD는 [PRD.md](./PRD.md) 참고.
 
-You can view a fully working demo at [demo-nextjs-with-supabase.vercel.app](https://demo-nextjs-with-supabase.vercel.app/).
+## 기능
 
-## Deploy to Vercel
+- 후보자 등록 → 즉시 자동 매칭 (패널 전원 + 회의실이 모두 비는 시간 탐색)
+- 매칭 실패 시 사유와 함께 에스컬레이션 상태로 표시
+- 확정된 면접의 면접관 일정 변경을 시뮬레이션하면 전체 시간대를 다시 탐색해 자동 재조율
+- 조율 대시보드에서 상태별로 전체 케이스 확인, 케이스 삭제
 
-Vercel deployment will guide you through creating a Supabase account and project.
+## 스택
 
-After installation of the Supabase integration, all relevant environment variables will be assigned to the project so the deployment is fully functioning.
+- Next.js 16 (App Router) — 프론트엔드 + API 라우트(백엔드)
+- Supabase (Postgres) — 서버 전용 서비스 롤 키로만 접근, 브라우저는 항상 `/api/*`를 거침
+- Tailwind CSS + shadcn/ui
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&project-name=nextjs-with-supabase&repository-name=nextjs-with-supabase&demo-title=nextjs-with-supabase&demo-description=This+starter+configures+Supabase+Auth+to+use+cookies%2C+making+the+user%27s+session+available+throughout+the+entire+Next.js+app+-+Client+Components%2C+Server+Components%2C+Route+Handlers%2C+Server+Actions+and+Middleware.&demo-url=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2F&external-id=https%3A%2F%2Fgithub.com%2Fvercel%2Fnext.js%2Ftree%2Fcanary%2Fexamples%2Fwith-supabase&demo-image=https%3A%2F%2Fdemo-nextjs-with-supabase.vercel.app%2Fopengraph-image.png)
+## 로컬 실행
 
-The above will also clone the Starter kit to your GitHub, you can clone that locally and develop locally.
+```bash
+npm install
+# .env.local 에 Supabase 프로젝트 URL / publishable key / service role key 설정
+npm run dev
+```
 
-If you wish to just develop locally and not deploy to Vercel, [follow the steps below](#clone-and-run-locally).
+## 에러 해결 기록
 
-## Clone and run locally
+- **미들웨어가 모든 페이지를 로그인으로 튕겨내던 문제**: 스타터 템플릿의 기본 미들웨어(`lib/supabase/proxy.ts`)는 미인증 사용자를 루트(`/`)를 제외한 모든 경로에서 `/auth/login`으로 리다이렉트하도록 되어 있었다. 이 앱은 로그인 기능이 없는 내부 도구라, `/interviews` 화면은 물론 `/api/interviews` 요청까지 전부 로그인 페이지로 튕겨나가 대시보드가 무한 로딩 상태에 빠졌다. 원인을 찾아 해당 리다이렉트 로직을 제거해 해결했다.
+- **재조율 로직이 후보자의 원래 희망시간에 갇히는 문제**: 프로토타입 단계에서, 확정된 면접의 면접관 일정이 바뀌었을 때 후보자가 처음 제출한 희망시간 안에서만 대체 슬롯을 찾도록 짰더니 후보자 대부분이 희망시간을 1~2개만 제출하는 상황에서 재조율 성공률이 낮을 위험이 있었다. 재조율 시에는 원래 희망시간 제한을 풀고 전체 시간대를 재탐색하도록 `lib/matching.ts`의 로직을 수정했다.
 
-1. You'll first need a Supabase project which can be made [via the Supabase dashboard](https://database.new)
+## 회고
 
-2. Create a Next.js app using the Supabase Starter template npx command
-
-   ```bash
-   npx create-next-app --example with-supabase with-supabase-app
-   ```
-
-   ```bash
-   yarn create next-app --example with-supabase with-supabase-app
-   ```
-
-   ```bash
-   pnpm create next-app --example with-supabase with-supabase-app
-   ```
-
-3. Use `cd` to change into the app's directory
-
-   ```bash
-   cd with-supabase-app
-   ```
-
-4. Rename `.env.example` to `.env.local` and update the following:
-
-  ```env
-  NEXT_PUBLIC_SUPABASE_URL=[INSERT SUPABASE PROJECT URL]
-  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=[INSERT SUPABASE PROJECT API PUBLISHABLE OR ANON KEY]
-  ```
-  > [!NOTE]
-  > This example uses `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, which refers to Supabase's new **publishable** key format.
-  > Both legacy **anon** keys and new **publishable** keys can be used with this variable name during the transition period. Supabase's dashboard may show `NEXT_PUBLIC_SUPABASE_ANON_KEY`; its value can be used in this example.
-  > See the [full announcement](https://github.com/orgs/supabase/discussions/29260) for more information.
-
-  Both `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` can be found in [your Supabase project's API settings](https://supabase.com/dashboard/project/_?showConnect=true)
-
-5. You can now run the Next.js local development server:
-
-   ```bash
-   npm run dev
-   ```
-
-   The starter kit should now be running on [localhost:3000](http://localhost:3000/).
-
-6. This template comes with the default shadcn/ui style initialized. If you instead want other ui.shadcn styles, delete `components.json` and [re-install shadcn/ui](https://ui.shadcn.com/docs/installation/next)
-
-> Check out [the docs for Local Development](https://supabase.com/docs/guides/getting-started/local-development) to also run Supabase locally.
-
-## Feedback and issues
-
-Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
-
-## More Supabase examples
-
-- [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)
-- [Cookie-based Auth and the Next.js 13 App Router (free course)](https://youtube.com/playlist?list=PL5S4mPUpp4OtMhpnp93EFSo42iQ40XjbF)
-- [Supabase Auth and the Next.js App Router](https://github.com/supabase/supabase/tree/master/examples/auth/nextjs)
+- 처음에는 Supabase 클라이언트를 프론트엔드에서 직접 호출하는 이전 프로젝트(Todo 앱) 방식을 그대로 가져가려 했으나, 과제 요구사항(백엔드 API 서버 구현)에 맞춰 Next.js API 라우트를 별도 계층으로 분리했다. 덕분에 매칭·재조율 같은 핵심 로직이 서버에만 존재하게 되어, 프론트엔드는 오직 `fetch`로만 통신하는 명확한 경계가 생겼다.
+- 인증 미들웨어처럼 스타터 템플릿에 이미 들어있는 코드는 "당연히 되겠지"라고 넘기기 쉬운데, 실제로 로컬에서 눌러보지 않았다면 대시보드가 로그인 화면으로 튕기는 이유를 한참 못 찾았을 것이다. PRD·코드만으로 검증을 끝내지 않고 브라우저로 직접 눌러보는 과정의 중요성을 다시 확인했다.
