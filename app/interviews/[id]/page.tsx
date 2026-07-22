@@ -1,23 +1,28 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, useCallback, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { SLOT_LABELS } from "@/lib/matching";
+import { formatSlotLabel } from "@/lib/slots";
 
 type InterviewerDetail = { id: string; name: string; role: string };
+
+type Stage = "created" | "interviewer_pending" | "interviewer_done" | "candidate_pending" | "candidate_done";
 
 type InterviewDetail = {
   id: string;
   candidate_name: string;
+  candidate_email: string | null;
   position: string;
   panelDetail: InterviewerDetail[];
-  preferred_slots: number[];
-  matched_slot: number | null;
+  preferred_slots: string[];
+  matched_slot: string | null;
   roomName: string | null;
   status: "confirmed" | "rescheduled" | "escalated" | "pending";
+  stage: Stage;
+  interviewerProgress: { submitted: number; total: number };
   note: string | null;
 };
 
@@ -28,21 +33,57 @@ const STATUS_LABEL: Record<InterviewDetail["status"], string> = {
   pending: "응답 대기",
 };
 
+const STAGE_LABEL: Record<Stage, string> = {
+  created: "등록됨 — 면접관 문의 전",
+  interviewer_pending: "면접관 응답 대기 중",
+  interviewer_done: "면접관 응답 완료 — 후보자 발송 가능",
+  candidate_pending: "후보자 응답 대기 중",
+  candidate_done: "후보자 응답 완료",
+};
+
 export default function InterviewDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
   const [interview, setInterview] = useState<InterviewDetail | null>(null);
   const [busy, setBusy] = useState(false);
+  const [inviting, setInviting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     const res = await fetch(`/api/interviews/${id}`);
     if (res.ok) setInterview(await res.json());
-  }
+  }, [id]);
 
   useEffect(() => {
     load();
-  }, [id]);
+  }, [load]);
+
+  async function handleInviteInterviewers() {
+    setInviting(true);
+    const res = await fetch(`/api/interviews/${id}/invite-interviewers`, { method: "POST" });
+    setInviting(false);
+    if (res.ok) {
+      const body = await res.json();
+      setToast(`면접관 ${body.sent}명에게 가능 시간 문의 메일을 보냈습니다.`);
+      load();
+    } else {
+      const body = await res.json();
+      setToast(body.error ?? "이메일 발송에 실패했습니다.");
+    }
+  }
+
+  async function handleInviteCandidate() {
+    setInviting(true);
+    const res = await fetch(`/api/interviews/${id}/invite`, { method: "POST" });
+    setInviting(false);
+    if (res.ok) {
+      setToast("후보자에게 희망시간 문의 이메일을 보냈습니다.");
+      load();
+    } else {
+      const body = await res.json();
+      setToast(body.error ?? "이메일 발송에 실패했습니다.");
+    }
+  }
 
   async function handleReschedule() {
     setBusy(true);
@@ -69,6 +110,8 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     return <p className="p-6 text-sm text-muted-foreground">불러오는 중...</p>;
   }
 
+  const matchingDone = interview.status !== "pending";
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
       <Link href="/interviews" className="text-sm text-muted-foreground hover:underline">
@@ -94,24 +137,54 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
         </div>
       </div>
 
+      {!matchingDone && (
+        <p className="text-sm">
+          <span className="font-semibold">진행 단계: </span>
+          {STAGE_LABEL[interview.stage]}
+          {interview.stage === "interviewer_pending" &&
+            ` (${interview.interviewerProgress.submitted}/${interview.interviewerProgress.total})`}
+        </p>
+      )}
+
       {interview.status === "confirmed" || interview.status === "rescheduled" ? (
         <p className="text-sm">
           <span className="font-semibold">확정 일정: </span>
-          {SLOT_LABELS[interview.matched_slot!]} · {interview.roomName}
+          {formatSlotLabel(interview.matched_slot!)} · {interview.roomName}
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
-          희망 시간대: {interview.preferred_slots.map((s) => SLOT_LABELS[s]).join(", ") || "미입력"}
+          희망 시간대:{" "}
+          {interview.preferred_slots.map((s) => formatSlotLabel(s)).join(", ") || "미입력"}
         </p>
       )}
 
       {interview.note && <p className="text-sm text-destructive">{interview.note}</p>}
       {toast && <p className="text-sm text-primary">{toast}</p>}
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {(interview.status === "confirmed" || interview.status === "rescheduled") && (
           <Button onClick={handleReschedule} disabled={busy} variant="secondary">
             {busy ? "재조율 중..." : "면접관 일정 변경 시뮬레이션"}
+          </Button>
+        )}
+        {!matchingDone && interview.stage === "created" && (
+          <Button onClick={handleInviteInterviewers} disabled={inviting} variant="secondary">
+            {inviting ? "발송 중..." : "① 면접관에게 가능 시간 문의 보내기"}
+          </Button>
+        )}
+        {!matchingDone && interview.stage === "interviewer_pending" && (
+          <Button disabled variant="secondary">
+            면접관 응답 대기 중 ({interview.interviewerProgress.submitted}/{interview.interviewerProgress.total})
+          </Button>
+        )}
+        {!matchingDone && interview.stage === "interviewer_done" && interview.candidate_email && (
+          <Button onClick={handleInviteCandidate} disabled={inviting} variant="secondary">
+            {inviting ? "발송 중..." : "② 후보자에게 이메일 발송"}
+          </Button>
+        )}
+        {!matchingDone && interview.stage === "candidate_pending" && (
+          <Button disabled variant="secondary">
+            후보자 응답 대기 중
           </Button>
         )}
         <Button onClick={handleDelete} variant="ghost">

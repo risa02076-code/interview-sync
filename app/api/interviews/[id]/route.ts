@@ -13,6 +13,11 @@ export async function GET(_request: Request, { params }: Params) {
 
   const { data: interviewers } = await supabase.from("interviewers").select("*");
   const { data: rooms } = await supabase.from("rooms").select("*");
+  const { data: requests } = await supabase
+    .from("response_requests")
+    .select("interviewer_id,status")
+    .eq("interview_id", id)
+    .eq("kind", "interviewer");
 
   return NextResponse.json({
     ...data,
@@ -20,6 +25,10 @@ export async function GET(_request: Request, { params }: Params) {
       .map((pid) => interviewers?.find((p) => p.id === pid))
       .filter(Boolean),
     roomName: rooms?.find((r) => r.id === data.room_id)?.name ?? null,
+    interviewerProgress: {
+      submitted: requests?.filter((r) => r.status === "submitted").length ?? 0,
+      total: requests?.length ?? 0,
+    },
   });
 }
 
@@ -59,7 +68,7 @@ export async function PATCH(_request: Request, { params }: Params) {
   if (interview.room_id) {
     const room = roomList.find((r) => r.id === interview.room_id);
     if (room) {
-      const freedBusy = room.busy_slots.filter((s: number) => s !== interview.matched_slot);
+      const freedBusy = room.busy_slots.filter((s: string) => s !== interview.matched_slot);
       await supabase.from("rooms").update({ busy_slots: freedBusy }).eq("id", room.id);
       room.busy_slots = freedBusy;
     }
