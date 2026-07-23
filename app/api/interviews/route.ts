@@ -15,18 +15,32 @@ export async function GET() {
   const { data: rooms } = await supabase.from("rooms").select("id,name");
   const { data: requests } = await supabase
     .from("response_requests")
-    .select("interview_id,status")
-    .eq("kind", "interviewer");
+    .select("interview_id,interviewer_id,kind,status");
 
   const enriched = interviews.map((iv) => {
-    const relevant = requests?.filter((r) => r.interview_id === iv.id) ?? [];
+    const interviewerReqs =
+      requests?.filter((r) => r.interview_id === iv.id && r.kind === "interviewer") ?? [];
+    const candidateReq = requests?.find(
+      (r) => r.interview_id === iv.id && r.kind === "candidate",
+    );
+
+    const panelDetail = (iv.panel as string[])
+      .map((id) => interviewers?.find((p) => p.id === id))
+      .filter(Boolean)
+      .map((p) => ({
+        ...p!,
+        responded: interviewerReqs.some((r) => r.interviewer_id === p!.id && r.status === "submitted"),
+      }));
+
     return {
       ...iv,
-      panelDetail: (iv.panel as string[])
-        .map((id) => interviewers?.find((p) => p.id === id))
-        .filter(Boolean),
+      panelDetail,
       roomName: rooms?.find((r) => r.id === iv.room_id)?.name ?? null,
-      interviewerProgress: { submitted: relevant.filter((r) => r.status === "submitted").length, total: relevant.length },
+      interviewerProgress: {
+        submitted: interviewerReqs.filter((r) => r.status === "submitted").length,
+        total: interviewerReqs.length,
+      },
+      candidateResponded: candidateReq?.status === "submitted",
     };
   });
 

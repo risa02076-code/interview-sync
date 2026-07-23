@@ -23,7 +23,11 @@ export async function GET(_request: Request, { params }: Params) {
     ...data,
     panelDetail: (data.panel as string[])
       .map((pid) => interviewers?.find((p) => p.id === pid))
-      .filter(Boolean),
+      .filter(Boolean)
+      .map((p) => ({
+        ...p!,
+        responded: requests?.some((r) => r.interviewer_id === p!.id && r.status === "submitted") ?? false,
+      })),
     roomName: rooms?.find((r) => r.id === data.room_id)?.name ?? null,
     interviewerProgress: {
       submitted: requests?.filter((r) => r.status === "submitted").length ?? 0,
@@ -88,6 +92,8 @@ export async function PATCH(_request: Request, { params }: Params) {
       room_id: result.roomId,
       status: result.status,
       note,
+      // 시간이 바뀌었으니 예전 시간 기준으로 나갔던 확정 메일은 더 이상 유효하지 않다
+      confirmation_sent_at: null,
     })
     .eq("id", id)
     .select()

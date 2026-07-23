@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { formatSlotLabel } from "@/lib/slots";
+import { deriveDisplayStatus, dDayLabel, STATUS_META, type DisplayStatus } from "@/lib/status";
 
-type InterviewerDetail = { id: string; name: string; role: string };
-
-type Stage = "created" | "interviewer_pending" | "interviewer_done" | "candidate_pending" | "candidate_done";
+type InterviewerDetail = { id: string; name: string; role: string; responded: boolean };
 
 type InterviewRow = {
   id: string;
@@ -19,51 +17,27 @@ type InterviewRow = {
   matched_slot: string | null;
   roomName: string | null;
   status: "confirmed" | "rescheduled" | "escalated" | "pending";
-  stage: Stage;
+  stage: "created" | "interviewer_pending" | "interviewer_done" | "candidate_pending" | "candidate_done";
   interviewerProgress: { submitted: number; total: number };
+  candidateResponded: boolean;
+  confirmation_sent_at: string | null;
   note: string | null;
 };
 
-const STATUS_LABEL: Record<InterviewRow["status"], string> = {
-  confirmed: "확정",
-  rescheduled: "재조율됨",
-  escalated: "에스컬레이션",
-  pending: "응답 대기",
-};
-
-const STATUS_VARIANT: Record<InterviewRow["status"], "default" | "secondary" | "destructive" | "outline"> = {
-  confirmed: "default",
-  rescheduled: "secondary",
-  escalated: "destructive",
-  pending: "outline",
-};
-
-const STAGE_LABEL: Record<Stage, string> = {
-  created: "등록됨",
-  interviewer_pending: "면접관 응답 대기",
-  interviewer_done: "면접관 응답 완료",
-  candidate_pending: "후보자 응답 대기",
-  candidate_done: "후보자 응답 완료",
-};
-
-function stageText(iv: InterviewRow) {
-  if (iv.status !== "pending") return "매칭 완료";
-  if (iv.stage === "interviewer_pending") {
-    return `${STAGE_LABEL[iv.stage]} (${iv.interviewerProgress.submitted}/${iv.interviewerProgress.total})`;
-  }
-  return STAGE_LABEL[iv.stage];
-}
-
 function toCsv(rows: InterviewRow[]) {
-  const header = ["후보자", "직무", "면접 패널", "진행 단계", "매칭 결과", "확정 일정"];
-  const lines = rows.map((iv) => [
-    iv.candidate_name,
-    iv.position,
-    iv.panelDetail.map((p) => p.name).join(" / "),
-    stageText(iv),
-    STATUS_LABEL[iv.status],
-    iv.matched_slot !== null ? `${formatSlotLabel(iv.matched_slot)} · ${iv.roomName ?? ""}` : "",
-  ]);
+  const header = ["후보자", "직무", "D-day", "상태", "면접관 응답", "후보자 응답", "확정 일정"];
+  const lines = rows.map((iv) => {
+    const ds = deriveDisplayStatus(iv);
+    return [
+      iv.candidate_name,
+      iv.position,
+      dDayLabel(iv.matched_slot) ?? "",
+      STATUS_META[ds].label,
+      `${iv.interviewerProgress.submitted}/${iv.interviewerProgress.total}`,
+      iv.candidateResponded ? "완료" : "대기",
+      iv.matched_slot !== null ? `${formatSlotLabel(iv.matched_slot)} · ${iv.roomName ?? ""}` : "",
+    ];
+  });
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   return [header, ...lines].map((row) => row.map(escape).join(",")).join("\r\n");
 }
@@ -71,6 +45,9 @@ function toCsv(rows: InterviewRow[]) {
 export default function InterviewsPage() {
   const [interviews, setInterviews] = useState<InterviewRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [positionFilter, setPositionFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<DisplayStatus | "all">("all");
 
   async function load() {
     const res = await fetch("/api/interviews");
@@ -85,15 +62,47 @@ export default function InterviewsPage() {
     load();
   }, []);
 
+  const positions = useMemo(
+    () => Array.from(new Set((interviews ?? []).map((iv) => iv.position))),
+    [interviews],
+  );
+
+  const filtered = useMemo(() => {
+    return (interviews ?? []).filter((iv) => {
+      if (positionFilter !== "all" && iv.position !== positionFilter) return false;
+      if (statusFilter !== "all" && deriveDisplayStatus(iv) !== statusFilter) return false;
+      return true;
+    });
+  }, [interviews, positionFilter, statusFilter]);
+
   async function handleDelete(id: string) {
     if (!confirm("이 면접 케이스를 삭제할까요?")) return;
     const res = await fetch(`/api/interviews/${id}`, { method: "DELETE" });
     if (res.ok) load();
   }
 
+  async function handleReschedule(id: string) {
+    setBusyId(id);
+    await fetch(`/api/interviews/${id}`, { method: "PATCH" });
+    setBusyId(null);
+    load();
+  }
+
+  async function handleConfirm(id: string) {
+    setBusyId(id);
+    const res = await fetch(`/api/interviews/${id}/confirm`, { method: "POST" });
+    setBusyId(null);
+    if (!res.ok) {
+      const body = await res.json();
+      alert(body.error ?? "확정 메일 발송에 실패했습니다.");
+      return;
+    }
+    load();
+  }
+
   function handleExportCsv() {
-    if (!interviews?.length) return;
-    const csv = "﻿" + toCsv(interviews);
+    if (!filtered.length) return;
+    const csv = "﻿" + toCsv(filtered);
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -104,7 +113,7 @@ export default function InterviewsPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-6">
+    <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">조율 대시보드</h1>
@@ -113,7 +122,7 @@ export default function InterviewsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handleExportCsv} disabled={!interviews?.length}>
+          <Button variant="outline" onClick={handleExportCsv} disabled={!filtered.length}>
             CSV로 내보내기
           </Button>
           <Button asChild variant="outline">
@@ -125,52 +134,127 @@ export default function InterviewsPage() {
         </div>
       </div>
 
+      {!!interviews?.length && (
+        <div className="flex flex-wrap gap-3">
+          <select
+            value={positionFilter}
+            onChange={(e) => setPositionFilter(e.target.value)}
+            className="rounded-md border bg-background px-3 py-1.5 text-sm"
+          >
+            <option value="all">전체 직무</option>
+            {positions.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as DisplayStatus | "all")}
+            className="rounded-md border bg-background px-3 py-1.5 text-sm"
+          >
+            <option value="all">전체 상태</option>
+            {(Object.keys(STATUS_META) as DisplayStatus[]).map((k) => (
+              <option key={k} value={k}>
+                {STATUS_META[k].emoji} {STATUS_META[k].label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {error && <p className="text-sm text-destructive">{error}</p>}
       {!interviews && !error && <p className="text-sm text-muted-foreground">불러오는 중...</p>}
       {interviews?.length === 0 && (
         <p className="text-sm text-muted-foreground">등록된 면접 케이스가 없습니다.</p>
       )}
+      {!!interviews?.length && filtered.length === 0 && (
+        <p className="text-sm text-muted-foreground">조건에 맞는 케이스가 없습니다.</p>
+      )}
 
-      {!!interviews?.length && (
+      {!!filtered.length && (
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                 <th className="p-3 font-medium">후보자</th>
                 <th className="p-3 font-medium">직무</th>
-                <th className="p-3 font-medium">면접 패널</th>
-                <th className="p-3 font-medium">진행 단계</th>
-                <th className="p-3 font-medium">매칭 결과</th>
+                <th className="p-3 font-medium">D-day</th>
+                <th className="p-3 font-medium">상태</th>
+                <th className="p-3 font-medium">면접관 응답</th>
+                <th className="p-3 font-medium">후보자 응답</th>
                 <th className="p-3 font-medium">확정 일정</th>
-                <th className="p-3 font-medium" />
+                <th className="p-3 font-medium">액션</th>
               </tr>
             </thead>
             <tbody>
-              {interviews?.map((iv) => (
-                <tr key={iv.id} className="border-b last:border-0">
-                  <td className="p-3">
-                    <Link href={`/interviews/${iv.id}`} className="font-semibold hover:underline">
-                      {iv.candidate_name}
-                    </Link>
-                  </td>
-                  <td className="p-3 text-muted-foreground">{iv.position}</td>
-                  <td className="p-3 text-muted-foreground">
-                    {iv.panelDetail.map((p) => p.name).join(", ")}
-                  </td>
-                  <td className="p-3 text-muted-foreground">{stageText(iv)}</td>
-                  <td className="p-3">
-                    <Badge variant={STATUS_VARIANT[iv.status]}>{STATUS_LABEL[iv.status]}</Badge>
-                  </td>
-                  <td className="p-3 text-muted-foreground">
-                    {iv.matched_slot !== null ? `${formatSlotLabel(iv.matched_slot)} · ${iv.roomName}` : "-"}
-                  </td>
-                  <td className="p-3 text-right">
-                    <Button size="sm" variant="ghost" onClick={() => handleDelete(iv.id)}>
-                      삭제
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((iv) => {
+                const ds = deriveDisplayStatus(iv);
+                const meta = STATUS_META[ds];
+                const dday = dDayLabel(iv.matched_slot);
+                const matchingDone = iv.status !== "pending";
+                return (
+                  <tr key={iv.id} className="border-b last:border-0 align-top">
+                    <td className="p-3">
+                      <Link href={`/interviews/${iv.id}`} className="font-semibold hover:underline">
+                        {iv.candidate_name}
+                      </Link>
+                    </td>
+                    <td className="p-3 text-muted-foreground">{iv.position}</td>
+                    <td className="p-3 font-mono text-xs text-muted-foreground">{dday ?? "-"}</td>
+                    <td className="p-3">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-semibold ${meta.badgeClass}`}
+                      >
+                        {meta.emoji} {meta.label}
+                      </span>
+                    </td>
+                    <td className="p-3 text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        {iv.panelDetail.map((p) => (
+                          <span key={p.id} className="text-muted-foreground">
+                            {p.name} {p.responded ? "✔" : "○"}
+                          </span>
+                        ))}
+                        <span className="mt-0.5 font-mono text-muted-foreground">
+                          {iv.interviewerProgress.submitted}/{iv.interviewerProgress.total}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="p-3 text-xs text-muted-foreground">
+                      {iv.candidateResponded ? "● 완료" : "○ 대기"}
+                    </td>
+                    <td className="p-3 text-muted-foreground">
+                      {iv.matched_slot !== null ? `${formatSlotLabel(iv.matched_slot)} · ${iv.roomName}` : "-"}
+                    </td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-1">
+                        <Button asChild size="sm" variant="outline">
+                          <Link href={`/interviews/${iv.id}`}>상세보기</Link>
+                        </Button>
+                        {matchingDone && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busyId === iv.id}
+                            onClick={() => handleReschedule(iv.id)}
+                          >
+                            재조율
+                          </Button>
+                        )}
+                        {ds === "coordinated" && (
+                          <Button size="sm" disabled={busyId === iv.id} onClick={() => handleConfirm(iv.id)}>
+                            확정 메일 발송
+                          </Button>
+                        )}
+                        <Button size="sm" variant="ghost" onClick={() => handleDelete(iv.id)}>
+                          삭제
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
