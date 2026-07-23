@@ -10,6 +10,7 @@ type Interview = {
   panel: string[];
   matched_slot: string | null;
   room_id: string | null;
+  interview_type: string;
   status: string;
   confirmation_sent_at: string | null;
 };
@@ -25,14 +26,14 @@ export async function sendConfirmationEmail(
     return { ok: false, error: "이미 확정 메일을 발송했습니다." };
   }
 
-  let roomName = "미정";
+  let roomName = interview.interview_type;
   if (interview.room_id) {
     const { data: room } = await supabase
       .from("rooms")
       .select("name")
       .eq("id", interview.room_id)
       .single();
-    roomName = room?.name ?? "미정";
+    roomName = room?.name ?? interview.interview_type;
   }
 
   const { data: panelInterviewers } = await supabase

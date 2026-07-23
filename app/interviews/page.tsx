@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { formatSlotLabel } from "@/lib/slots";
 import { deriveDisplayStatus, dDayLabel, STATUS_META, type DisplayStatus } from "@/lib/status";
+import { INTERVIEW_TYPES } from "@/lib/matching";
 
 type InterviewerDetail = { id: string; name: string; role: string; responded: boolean };
 
@@ -12,6 +14,7 @@ type InterviewRow = {
   id: string;
   candidate_name: string;
   position: string;
+  interview_type: string;
   panelDetail: InterviewerDetail[];
   preferred_slots: string[];
   matched_slot: string | null;
@@ -24,29 +27,44 @@ type InterviewRow = {
   note: string | null;
 };
 
+function locationText(iv: InterviewRow) {
+  if (iv.matched_slot === null) return "-";
+  return `${formatSlotLabel(iv.matched_slot)} · ${iv.roomName ?? iv.interview_type}`;
+}
+
 function toCsv(rows: InterviewRow[]) {
-  const header = ["후보자", "직무", "D-day", "상태", "면접관 응답", "후보자 응답", "확정 일정"];
+  const header = ["후보자", "직무", "면접 유형", "D-day", "상태", "면접관 응답", "후보자 응답", "확정 일정"];
   const lines = rows.map((iv) => {
     const ds = deriveDisplayStatus(iv);
     return [
       iv.candidate_name,
       iv.position,
+      iv.interview_type,
       dDayLabel(iv.matched_slot) ?? "",
       STATUS_META[ds].label,
       `${iv.interviewerProgress.submitted}/${iv.interviewerProgress.total}`,
       iv.candidateResponded ? "완료" : "대기",
-      iv.matched_slot !== null ? `${formatSlotLabel(iv.matched_slot)} · ${iv.roomName ?? ""}` : "",
+      locationText(iv),
     ];
   });
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
   return [header, ...lines].map((row) => row.map(escape).join(",")).join("\r\n");
 }
 
+const IN_PROGRESS_STATUSES: DisplayStatus[] = [
+  "awaiting_interviewer",
+  "awaiting_candidate",
+  "needs_reschedule",
+  "coordinated",
+];
+
 export default function InterviewsPage() {
   const [interviews, setInterviews] = useState<InterviewRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [positionFilter, setPositionFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<DisplayStatus | "all">("all");
 
   async function load() {
@@ -67,13 +85,29 @@ export default function InterviewsPage() {
     [interviews],
   );
 
+  const stats = useMemo(() => {
+    const list = interviews ?? [];
+    return {
+      total: list.length,
+      inProgress: list.filter((iv) => IN_PROGRESS_STATUSES.includes(deriveDisplayStatus(iv))).length,
+      confirmed: list.filter((iv) => deriveDisplayStatus(iv) === "confirmed").length,
+      today: list.filter((iv) => dDayLabel(iv.matched_slot) === "D-0").length,
+      completed: list.filter((iv) => deriveDisplayStatus(iv) === "completed").length,
+    };
+  }, [interviews]);
+
   const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return (interviews ?? []).filter((iv) => {
       if (positionFilter !== "all" && iv.position !== positionFilter) return false;
+      if (typeFilter !== "all" && iv.interview_type !== typeFilter) return false;
       if (statusFilter !== "all" && deriveDisplayStatus(iv) !== statusFilter) return false;
+      if (q && !iv.candidate_name.toLowerCase().includes(q) && !iv.position.toLowerCase().includes(q)) {
+        return false;
+      }
       return true;
     });
-  }, [interviews, positionFilter, statusFilter]);
+  }, [interviews, positionFilter, typeFilter, statusFilter, search]);
 
   async function handleDelete(id: string) {
     if (!confirm("이 면접 케이스를 삭제할까요?")) return;
@@ -135,7 +169,23 @@ export default function InterviewsPage() {
       </div>
 
       {!!interviews?.length && (
+        <div className="grid grid-cols-5 gap-3">
+          <StatCard label="전체" value={stats.total} />
+          <StatCard label="조율중" value={stats.inProgress} className="text-blue-700" />
+          <StatCard label="확정" value={stats.confirmed} className="text-green-700" />
+          <StatCard label="오늘 면접" value={stats.today} className="text-red-700" />
+          <StatCard label="완료" value={stats.completed} className="text-neutral-500" />
+        </div>
+      )}
+
+      {!!interviews?.length && (
         <div className="flex flex-wrap gap-3">
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="🔍 후보자 이름 또는 직무 검색"
+            className="max-w-xs"
+          />
           <select
             value={positionFilter}
             onChange={(e) => setPositionFilter(e.target.value)}
@@ -145,6 +195,18 @@ export default function InterviewsPage() {
             {positions.map((p) => (
               <option key={p} value={p}>
                 {p}
+              </option>
+            ))}
+          </select>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="rounded-md border bg-background px-3 py-1.5 text-sm"
+          >
+            <option value="all">전체 면접 유형</option>
+            {INTERVIEW_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {t}
               </option>
             ))}
           </select>
@@ -179,6 +241,7 @@ export default function InterviewsPage() {
               <tr className="border-b bg-muted/40 text-left text-xs text-muted-foreground">
                 <th className="p-3 font-medium">후보자</th>
                 <th className="p-3 font-medium">직무</th>
+                <th className="p-3 font-medium">면접 유형</th>
                 <th className="p-3 font-medium">D-day</th>
                 <th className="p-3 font-medium">상태</th>
                 <th className="p-3 font-medium">면접관 응답</th>
@@ -201,6 +264,7 @@ export default function InterviewsPage() {
                       </Link>
                     </td>
                     <td className="p-3 text-muted-foreground">{iv.position}</td>
+                    <td className="p-3 text-muted-foreground">{iv.interview_type}</td>
                     <td className="p-3 font-mono text-xs text-muted-foreground">{dday ?? "-"}</td>
                     <td className="p-3">
                       <span
@@ -224,9 +288,7 @@ export default function InterviewsPage() {
                     <td className="p-3 text-xs text-muted-foreground">
                       {iv.candidateResponded ? "● 완료" : "○ 대기"}
                     </td>
-                    <td className="p-3 text-muted-foreground">
-                      {iv.matched_slot !== null ? `${formatSlotLabel(iv.matched_slot)} · ${iv.roomName}` : "-"}
-                    </td>
+                    <td className="p-3 text-muted-foreground">{locationText(iv)}</td>
                     <td className="p-3">
                       <div className="flex flex-wrap gap-1">
                         <Button asChild size="sm" variant="outline">
@@ -259,6 +321,15 @@ export default function InterviewsPage() {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, className }: { label: string; value: number; className?: string }) {
+  return (
+    <div className="rounded-lg border p-4">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className={`mt-1 font-mono text-2xl font-bold ${className ?? ""}`}>{value}</p>
     </div>
   );
 }

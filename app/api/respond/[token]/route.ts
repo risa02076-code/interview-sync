@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { matchAndPersist } from "@/lib/applyMatch";
 import { generateUpcomingSlots } from "@/lib/slots";
 import { sendCandidateInvite } from "@/lib/sendCandidateInvite";
+import { requiresRoom } from "@/lib/matching";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -20,7 +21,7 @@ export async function GET(_request: Request, { params }: Params) {
   if (reqRow.kind === "candidate") {
     const { data: interview } = await supabase
       .from("interviews")
-      .select("candidate_name, position, panel")
+      .select("candidate_name, position, panel, interview_type")
       .eq("id", reqRow.interview_id)
       .single();
 
@@ -28,9 +29,17 @@ export async function GET(_request: Request, { params }: Params) {
       .from("interviewers")
       .select("busy_slots")
       .in("id", interview?.panel ?? []);
-    const slots = generateUpcomingSlots().filter(
-      (s) => !panelInterviewers?.some((p) => p.busy_slots.includes(s.key)),
-    );
+    const needsRoom = requiresRoom(interview?.interview_type ?? "1차 대면");
+    const { data: rooms } = needsRoom
+      ? await supabase.from("rooms").select("busy_slots")
+      : { data: null };
+
+    const slots = generateUpcomingSlots().filter((s) => {
+      const panelBusy = panelInterviewers?.some((p) => p.busy_slots.includes(s.key));
+      if (panelBusy) return false;
+      if (needsRoom && !rooms?.some((r) => !r.busy_slots.includes(s.key))) return false;
+      return true;
+    });
 
     return NextResponse.json({
       kind: "candidate",
@@ -73,10 +82,16 @@ export async function POST(request: Request, { params }: Params) {
   if (reqRow.kind === "candidate") {
     const { data: interview } = await supabase
       .from("interviews")
-      .select("panel")
+      .select("panel, interview_type")
       .eq("id", reqRow.interview_id)
       .single();
-    await matchAndPersist(supabase, reqRow.interview_id, selectedSlots, interview!.panel);
+    await matchAndPersist(
+      supabase,
+      reqRow.interview_id,
+      selectedSlots,
+      interview!.panel,
+      interview!.interview_type,
+    );
     await supabase.from("interviews").update({ stage: "candidate_done" }).eq("id", reqRow.interview_id);
   } else {
     await supabase

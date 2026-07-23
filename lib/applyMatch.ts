@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { findMatch, type Interviewer, type Room } from "./matching";
+import { findMatch, requiresRoom, type Interviewer, type Room } from "./matching";
 
 /**
  * 후보자가 응답 링크로 희망시간을 처음 제출했을 때 사용.
@@ -11,11 +11,18 @@ export async function matchAndPersist(
   interviewId: string,
   candidateSlots: string[],
   panel: string[],
+  interviewType: string,
 ) {
   const { data: panelInterviewers } = await supabase.from("interviewers").select("*").in("id", panel);
   const { data: rooms } = await supabase.from("rooms").select("*");
 
-  const result = findMatch(candidateSlots, panelInterviewers as Interviewer[], rooms as Room[], false);
+  const result = findMatch(
+    candidateSlots,
+    panelInterviewers as Interviewer[],
+    rooms as Room[],
+    false,
+    requiresRoom(interviewType),
+  );
 
   const { data: updated, error } = await supabase
     .from("interviews")

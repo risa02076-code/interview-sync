@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { INTERVIEW_TYPES } from "@/lib/matching";
 
 type Interviewer = { id: string; name: string; role: string };
 
@@ -14,6 +15,7 @@ export default function NewInterviewPage() {
   const [candidateName, setCandidateName] = useState("");
   const [candidateEmail, setCandidateEmail] = useState("");
   const [position, setPosition] = useState("");
+  const [interviewType, setInterviewType] = useState<string>(INTERVIEW_TYPES[0]);
   const [panel, setPanel] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +44,7 @@ export default function NewInterviewPage() {
     const res = await fetch("/api/interviews", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ candidateName, candidateEmail, position, panel }),
+      body: JSON.stringify({ candidateName, candidateEmail, position, panel, interviewType }),
     });
     const body = await res.json();
     setSubmitting(false);
@@ -93,15 +95,32 @@ export default function NewInterviewPage() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="candidateEmail">후보자 이메일</Label>
-          <Input
-            id="candidateEmail"
-            type="email"
-            value={candidateEmail}
-            onChange={(e) => setCandidateEmail(e.target.value)}
-            placeholder="예: candidate@example.com"
-          />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="candidateEmail">후보자 이메일</Label>
+            <Input
+              id="candidateEmail"
+              type="email"
+              value={candidateEmail}
+              onChange={(e) => setCandidateEmail(e.target.value)}
+              placeholder="예: candidate@example.com"
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="interviewType">면접 유형</Label>
+            <select
+              id="interviewType"
+              value={interviewType}
+              onChange={(e) => setInterviewType(e.target.value)}
+              className="rounded-md border bg-background px-3 py-2 text-sm"
+            >
+              {INTERVIEW_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="flex flex-col gap-2">

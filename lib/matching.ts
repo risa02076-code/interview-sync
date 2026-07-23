@@ -10,6 +10,14 @@ export type MatchResult = {
   note: string;
 };
 
+export const INTERVIEW_TYPES = ["1차 대면", "2차 대면", "온라인", "전화"] as const;
+export type InterviewType = (typeof INTERVIEW_TYPES)[number];
+
+/** 대면 면접만 회의실이 필요하다. 온라인/전화는 회의실 없이도 매칭 가능하다. */
+export function requiresRoom(interviewType: string): boolean {
+  return interviewType === "1차 대면" || interviewType === "2차 대면";
+}
+
 /**
  * 재조율(broaden=true) 시에는 후보자의 원래 희망시간에 갇히지 않고, 지금 기준으로
  * 다시 계산한 전체 영업일 슬롯을 재탐색한다.
@@ -20,6 +28,7 @@ export function findMatch(
   panelInterviewers: Interviewer[],
   rooms: Room[],
   broaden: boolean,
+  roomRequired: boolean = true,
 ): MatchResult {
   const slotsToTry = broaden ? generateUpcomingSlots().map((s) => s.key) : candidateSlots;
 
@@ -30,11 +39,17 @@ export function findMatch(
   for (const slot of slotsToTry) {
     const panelFree = panelInterviewers.every((p) => !p.busy_slots.includes(slot));
     if (!panelFree) continue;
-    const freeRoom = rooms.find((r) => !r.busy_slots.includes(slot));
-    if (!freeRoom) continue;
+
+    let roomId: string | null = null;
+    if (roomRequired) {
+      const freeRoom = rooms.find((r) => !r.busy_slots.includes(slot));
+      if (!freeRoom) continue;
+      roomId = freeRoom.id;
+    }
+
     return {
       matchedSlot: slot,
-      roomId: freeRoom.id,
+      roomId,
       status: broaden ? "rescheduled" : "confirmed",
       note: "",
     };

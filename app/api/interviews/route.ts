@@ -49,11 +49,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const body = await request.json();
-  const { candidateName, candidateEmail, position, panel } = body as {
+  const { candidateName, candidateEmail, position, panel, interviewType } = body as {
     candidateName: string;
     candidateEmail: string;
     position: string;
     panel: string[];
+    interviewType?: string;
   };
 
   if (!candidateName?.trim() || !position?.trim() || !candidateEmail?.trim() || !panel?.length) {
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
       candidate_email: candidateEmail,
       position,
       panel,
+      interview_type: interviewType || "1차 대면",
       preferred_slots: [],
       status: "pending",
       stage: "created",

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { findMatch, type Interviewer, type Room } from "@/lib/matching";
+import { findMatch, requiresRoom, type Interviewer, type Room } from "@/lib/matching";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -79,7 +79,7 @@ export async function PATCH(_request: Request, { params }: Params) {
   }
 
   // 트러블슈팅: 재조율 시에는 후보자의 원래 희망시간에 갇히지 않고 전체 슬롯을 재탐색한다
-  const result = findMatch([], panel, roomList, true);
+  const result = findMatch([], panel, roomList, true, requiresRoom(interview.interview_type));
   const note =
     result.status === "rescheduled"
       ? `${trigger.name}님 일정 변경 감지 → 새 일정으로 자동 재조율됨`

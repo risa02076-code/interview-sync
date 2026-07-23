@@ -17,6 +17,7 @@ type InterviewDetail = {
   candidate_name: string;
   candidate_email: string | null;
   position: string;
+  interview_type: string;
   panelDetail: InterviewerDetail[];
   preferred_slots: string[];
   matched_slot: string | null;
@@ -132,7 +133,9 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold">{interview.candidate_name}</h1>
-          <p className="text-sm text-muted-foreground">{interview.position}</p>
+          <p className="text-sm text-muted-foreground">
+            {interview.position} · {interview.interview_type}
+          </p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <span
@@ -167,7 +170,7 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
       {interview.status === "confirmed" || interview.status === "rescheduled" ? (
         <p className="text-sm">
           <span className="font-semibold">확정 일정: </span>
-          {formatSlotLabel(interview.matched_slot!)} · {interview.roomName}
+          {formatSlotLabel(interview.matched_slot!)} · {interview.roomName ?? interview.interview_type}
         </p>
       ) : (
         <p className="text-sm text-muted-foreground">
