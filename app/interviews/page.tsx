@@ -7,25 +7,10 @@ import { Input } from "@/components/ui/input";
 import { formatSlotLabel } from "@/lib/slots";
 import { deriveDisplayStatus, dDayLabel, STATUS_META, type DisplayStatus } from "@/lib/status";
 import { INTERVIEW_TYPES } from "@/lib/matching";
-
-type InterviewerDetail = { id: string; name: string; role: string; responded: boolean };
-
-type InterviewRow = {
-  id: string;
-  candidate_name: string;
-  position: string;
-  interview_type: string;
-  panelDetail: InterviewerDetail[];
-  preferred_slots: string[];
-  matched_slot: string | null;
-  roomName: string | null;
-  status: "confirmed" | "rescheduled" | "escalated" | "pending";
-  stage: "created" | "interviewer_pending" | "interviewer_done" | "candidate_pending" | "candidate_done";
-  interviewerProgress: { submitted: number; total: number };
-  candidateResponded: boolean;
-  confirmation_sent_at: string | null;
-  note: string | null;
-};
+import { type InterviewRow } from "./_components/types";
+import { WeekView } from "./_components/WeekView";
+import { DayView } from "./_components/DayView";
+import { EventDrawer } from "./_components/EventDrawer";
 
 function locationText(iv: InterviewRow) {
   if (iv.matched_slot === null) return "-";
@@ -58,6 +43,8 @@ const IN_PROGRESS_STATUSES: DisplayStatus[] = [
   "coordinated",
 ];
 
+type ViewMode = "list" | "week" | "day";
+
 export default function InterviewsPage() {
   const [interviews, setInterviews] = useState<InterviewRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +53,8 @@ export default function InterviewsPage() {
   const [positionFilter, setPositionFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<DisplayStatus | "all">("all");
+  const [view, setView] = useState<ViewMode>("list");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   async function load() {
     const res = await fetch("/api/interviews");
@@ -109,10 +98,15 @@ export default function InterviewsPage() {
     });
   }, [interviews, positionFilter, typeFilter, statusFilter, search]);
 
+  const selected = interviews?.find((iv) => iv.id === selectedId) ?? null;
+
   async function handleDelete(id: string) {
     if (!confirm("이 면접 케이스를 삭제할까요?")) return;
     const res = await fetch(`/api/interviews/${id}`, { method: "DELETE" });
-    if (res.ok) load();
+    if (res.ok) {
+      if (selectedId === id) setSelectedId(null);
+      load();
+    }
   }
 
   async function handleReschedule(id: string) {
@@ -178,52 +172,68 @@ export default function InterviewsPage() {
         </div>
       )}
 
-      {!!interviews?.length && (
-        <div className="flex flex-wrap gap-3">
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="🔍 후보자 이름 또는 직무 검색"
-            className="max-w-xs"
-          />
-          <select
-            value={positionFilter}
-            onChange={(e) => setPositionFilter(e.target.value)}
-            className="rounded-md border bg-background px-3 py-1.5 text-sm"
-          >
-            <option value="all">전체 직무</option>
-            {positions.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-          <select
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            className="rounded-md border bg-background px-3 py-1.5 text-sm"
-          >
-            <option value="all">전체 면접 유형</option>
-            {INTERVIEW_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as DisplayStatus | "all")}
-            className="rounded-md border bg-background px-3 py-1.5 text-sm"
-          >
-            <option value="all">전체 상태</option>
-            {(Object.keys(STATUS_META) as DisplayStatus[]).map((k) => (
-              <option key={k} value={k}>
-                {STATUS_META[k].emoji} {STATUS_META[k].label}
-              </option>
-            ))}
-          </select>
+      <div className="flex items-center justify-between">
+        <div className="inline-flex rounded-md border bg-muted/30 p-0.5">
+          {(["list", "week", "day"] as ViewMode[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={`rounded px-3 py-1.5 text-sm font-medium transition ${
+                view === v ? "bg-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {v === "list" ? "List" : v === "week" ? "Week" : "Day"}
+            </button>
+          ))}
         </div>
-      )}
+
+        {!!interviews?.length && (
+          <div className="flex flex-wrap gap-3">
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="🔍 후보자 이름 또는 직무 검색"
+              className="max-w-xs"
+            />
+            <select
+              value={positionFilter}
+              onChange={(e) => setPositionFilter(e.target.value)}
+              className="rounded-md border bg-background px-3 py-1.5 text-sm"
+            >
+              <option value="all">전체 직무</option>
+              {positions.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="rounded-md border bg-background px-3 py-1.5 text-sm"
+            >
+              <option value="all">전체 면접 유형</option>
+              {INTERVIEW_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as DisplayStatus | "all")}
+              className="rounded-md border bg-background px-3 py-1.5 text-sm"
+            >
+              <option value="all">전체 상태</option>
+              {(Object.keys(STATUS_META) as DisplayStatus[]).map((k) => (
+                <option key={k} value={k}>
+                  {STATUS_META[k].emoji} {STATUS_META[k].label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
       {!interviews && !error && <p className="text-sm text-muted-foreground">불러오는 중...</p>}
@@ -234,7 +244,14 @@ export default function InterviewsPage() {
         <p className="text-sm text-muted-foreground">조건에 맞는 케이스가 없습니다.</p>
       )}
 
-      {!!filtered.length && (
+      {!!filtered.length && view === "week" && (
+        <WeekView interviews={filtered} onSelect={(iv) => setSelectedId(iv.id)} />
+      )}
+      {!!filtered.length && view === "day" && (
+        <DayView interviews={filtered} onSelect={(iv) => setSelectedId(iv.id)} />
+      )}
+
+      {!!filtered.length && view === "list" && (
         <div className="overflow-x-auto rounded-lg border">
           <table className="w-full text-sm">
             <thead>
@@ -320,6 +337,16 @@ export default function InterviewsPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {selected && (
+        <EventDrawer
+          interview={selected}
+          busy={busyId === selected.id}
+          onClose={() => setSelectedId(null)}
+          onReschedule={handleReschedule}
+          onConfirm={handleConfirm}
+        />
       )}
     </div>
   );
