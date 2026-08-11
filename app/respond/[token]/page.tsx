@@ -197,12 +197,14 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   if (ctx.status === "submitted" || done) {
     return (
       <div className="mx-auto max-w-md p-6">
-        <p className="text-lg font-semibold">제출이 완료되었습니다.</p>
+        <p className="text-lg font-semibold">
+          {doneReason === "priorities-submitted" ? "희망 일정 제출이 완료되었습니다." : "제출이 완료되었습니다."}
+        </p>
         <p className="mt-2 text-sm text-muted-foreground">
           {doneReason === "requested-more"
             ? "다른 시간대를 다시 확인해 새로운 일정을 안내드리겠습니다. 창을 닫으셔도 됩니다."
             : doneReason === "priorities-submitted"
-              ? "리크루터가 확인 후 최종 확정 안내를 보내드리겠습니다. 창을 닫으셔도 됩니다."
+              ? "아직 면접 일정이 확정된 것은 아닙니다. 채용담당자가 최종 확정 후 안내드립니다."
               : "응답해주셔서 감사합니다. 창을 닫으셔도 됩니다."}
         </p>
       </div>
@@ -319,7 +321,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button onClick={submit} disabled={submitting || (isCandidate && selected.length === 0)}>
-        {submitting ? "처리 중..." : isCandidate ? `선택한 ${selected.length}개 제출하기` : "제출하기"}
+        {submitting ? "처리 중..." : isCandidate ? "희망 일정 제출" : "제출하기"}
       </Button>
 
       {isCandidate ? (
