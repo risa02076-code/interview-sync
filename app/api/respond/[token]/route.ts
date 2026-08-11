@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { matchAndPersist } from "@/lib/applyMatch";
-import { generateUpcomingSlots } from "@/lib/slots";
+import { generateUpcomingSlots, formatSlotLabel } from "@/lib/slots";
 import { sendCandidateInvite } from "@/lib/sendCandidateInvite";
-import { requiresRoom } from "@/lib/matching";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -21,25 +20,15 @@ export async function GET(_request: Request, { params }: Params) {
   if (reqRow.kind === "candidate") {
     const { data: interview } = await supabase
       .from("interviews")
-      .select("candidate_name, position, panel, interview_type")
+      .select("candidate_name, position, recommended_slot")
       .eq("id", reqRow.interview_id)
       .single();
 
-    const { data: panelInterviewers } = await supabase
-      .from("interviewers")
-      .select("busy_slots")
-      .in("id", interview?.panel ?? []);
-    const needsRoom = requiresRoom(interview?.interview_type ?? "1차 대면");
-    const { data: rooms } = needsRoom
-      ? await supabase.from("rooms").select("busy_slots")
-      : { data: null };
-
-    const slots = generateUpcomingSlots().filter((s) => {
-      const panelBusy = panelInterviewers?.some((p) => p.busy_slots.includes(s.key));
-      if (panelBusy) return false;
-      if (needsRoom && !rooms?.some((r) => !r.busy_slots.includes(s.key))) return false;
-      return true;
-    });
+    // 발송 시점에 고정해둔 추천 시간 하나만 보여준다 — 재조회 시점의 면접관 가용
+    // 시간으로 다시 계산하면 이메일로 안내한 시간과 달라질 수 있기 때문이다.
+    const slots = interview?.recommended_slot
+      ? [{ key: interview.recommended_slot, label: formatSlotLabel(interview.recommended_slot) }]
+      : [];
 
     return NextResponse.json({
       kind: "candidate",

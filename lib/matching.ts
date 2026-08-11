@@ -62,3 +62,32 @@ export function findMatch(
     note: "패널 전원 공통 가능 시간 없음 — 리크루터 확인 필요",
   };
 }
+
+export type SlotRecommendation = { slot: string; conflicts: string[] };
+
+/**
+ * 패널 전원이 동시에 가능한 시간이 없을 수도 있다는 전제 아래, 전체 후보 슬롯 중
+ * "충돌(면접관 불가능 + 회의실 없음)이 가장 적은" 시간을 하나 골라 추천한다.
+ * 완전히 비어있는 슬롯이 있으면 그게 곧 충돌 0인 최선의 추천이 된다.
+ */
+export function recommendLeastConflictSlot(
+  panelInterviewers: Interviewer[],
+  rooms: Room[],
+  roomRequired: boolean,
+): SlotRecommendation | null {
+  const candidates = generateUpcomingSlots().map((s) => s.key);
+  let best: (SlotRecommendation & { score: number }) | null = null;
+
+  for (const slot of candidates) {
+    const conflicts = panelInterviewers.filter((p) => p.busy_slots.includes(slot)).map((p) => p.name);
+    const roomBlocked = roomRequired && !rooms.some((r) => !r.busy_slots.includes(slot));
+    const score = conflicts.length + (roomBlocked ? 1 : 0);
+
+    if (!best || score < best.score) {
+      best = { slot, conflicts, score };
+      if (score === 0) break; // 충돌 0인 슬롯을 찾았으면 더 나은 대안은 없다
+    }
+  }
+
+  return best ? { slot: best.slot, conflicts: best.conflicts } : null;
+}

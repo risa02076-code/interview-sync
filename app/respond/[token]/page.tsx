@@ -27,7 +27,13 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
         if (!res.ok) throw new Error((await res.json()).error);
         return res.json();
       })
-      .then(setCtx)
+      .then((data: Context) => {
+        setCtx(data);
+        // 후보자에게는 항상 제안된 시간 하나만 오므로, 굳이 클릭하게 하지 않고 미리 선택해둔다.
+        if (data.kind === "candidate" && data.slots.length === 1) {
+          setSelected([data.slots[0].key]);
+        }
+      })
       .catch((e) => setError(e.message));
   }, [token]);
 
@@ -75,19 +81,21 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       <div>
         <h1 className="text-xl font-bold">
           {ctx.name}
-          {isCandidate ? "님, 면접 가능 시간을 알려주세요" : "님, 면접 불가능한 시간을 알려주세요"}
+          {isCandidate ? "님, 면접 일정을 제안드립니다" : "님, 면접 불가능한 시간을 알려주세요"}
         </h1>
         <p className="text-sm text-muted-foreground">{ctx.subtitle}</p>
       </div>
 
       <p className="text-sm">
         {isCandidate
-          ? "가능한 시간대를 모두 선택해주세요."
+          ? "아래 제안된 시간을 확인 후 확정해주세요."
           : "불가능한(면접이 어려운) 시간대를 모두 선택해주세요."}
       </p>
 
       {ctx.slots.length === 0 && (
-        <p className="text-sm text-destructive">현재 제안 가능한 시간대가 없습니다.</p>
+        <p className="text-sm text-destructive">
+          {isCandidate ? "제안된 시간이 없습니다. 리크루터에게 문의해주세요." : "현재 제안 가능한 시간대가 없습니다."}
+        </p>
       )}
 
       <div className="flex flex-wrap gap-2">
@@ -110,7 +118,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button onClick={submit} disabled={submitting || selected.length === 0}>
-        {submitting ? "제출 중..." : "제출하기"}
+        {submitting ? "처리 중..." : isCandidate ? "확정하기" : "제출하기"}
       </Button>
     </div>
   );
