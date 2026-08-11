@@ -95,6 +95,26 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
     setDone(true);
   }
 
+  async function submitInterviewerAllUnavailable() {
+    if (!ctx) return;
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch(`/api/respond/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // 이 기간 전체를 불가능으로 제출하면서, 다른 면접관 응답을 기다리지 않고
+      // 곧바로 재문의(조회 기간 확장)로 넘어가도록 표시한다.
+      body: JSON.stringify({ selectedSlots: ctx.slots.map((s) => s.key), allUnavailable: true }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError((await res.json()).error ?? "제출에 실패했습니다.");
+      return;
+    }
+    setDoneReason("requested-more");
+    setDone(true);
+  }
+
   if (error) {
     return <p className="mx-auto max-w-md p-6 text-sm text-destructive">{error}</p>;
   }
@@ -179,9 +199,18 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
         {submitting ? "처리 중..." : isCandidate ? "확정하기" : "제출하기"}
       </Button>
 
-      {isCandidate && (
+      {isCandidate ? (
         <Button variant="ghost" onClick={submitAllUnavailable} disabled={submitting} className="text-muted-foreground">
           이 시간들 다 안 돼요 — 다른 시간대도 확인해주세요
+        </Button>
+      ) : (
+        <Button
+          variant="ghost"
+          onClick={submitInterviewerAllUnavailable}
+          disabled={submitting}
+          className="text-muted-foreground"
+        >
+          이 기간엔 전부 안 돼요 — 다음 주도 확인해주세요
         </Button>
       )}
     </div>

@@ -161,11 +161,25 @@ export async function POST(request: Request, { params }: Params) {
   if (reqRow.kind === "interviewer" && reqRow.interview_id) {
     const { data: allRequests } = await supabase
       .from("response_requests")
-      .select("status")
+      .select("id, status")
       .eq("interview_id", reqRow.interview_id)
       .eq("kind", "interviewer");
     const allDone = allRequests?.every((r) => r.status === "submitted");
-    if (allDone) {
+
+    // 이 기간엔 전부 불가능하다고 표시했으면, 이 기간 안에서는 이미 매칭이 불가능하다는
+    // 게 확정이므로 다른 면접관 응답을 기다리지 않고 곧바로 재문의 단계로 넘어간다.
+    // 아직 대기 중인 다른 요청은 이번 라운드에서는 더 의미가 없으니 함께 정리해둔다.
+    if (!allDone && allUnavailable) {
+      const stillPending = (allRequests ?? []).filter((r) => r.status === "pending").map((r) => r.id);
+      if (stillPending.length) {
+        await supabase
+          .from("response_requests")
+          .update({ status: "submitted", submitted_at: new Date().toISOString() })
+          .in("id", stillPending);
+      }
+    }
+
+    if (allDone || allUnavailable) {
       const { data: interview } = await supabase
         .from("interviews")
         .select("*")
