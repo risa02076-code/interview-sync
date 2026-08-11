@@ -36,7 +36,7 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  await sendConfirmationEmail(supabase, updated);
+  await sendConfirmationEmail(supabase, updated, new URL(request.url).origin);
 
   return NextResponse.json(updated);
 }

@@ -30,6 +30,7 @@
 | 11 | 미응답 자동 독촉 | 요청 후 2일이 지나도록 응답이 없는 면접관·후보자에게 독촉 메일을 2일 간격·최대 3회 자동 재발송한다 |
 | 12 | 면접 전날 알림 | 내일 면접인 확정 케이스의 후보자·면접관 전원에게 일정·장소를 1회 안내한다 |
 | 13 | 수동 확정(히트맵) | 자동 매칭이 안 될 때(전원 공통 시간 없음)를 포함해 언제든, 리크루터가 케이스 상세에서 충돌 인원 수 히트맵을 보고 원하는 시간을 직접 골라 확정할 수 있다 |
+| 14 | 확정 후 후보자 일정 변경 요청 → 자동 재조율 | 확정 메일의 "일정 변경" 링크를 누르면 기존 확정 시간을 취소하고, 이미 수합해둔 면접관 데이터로 다른 공통 시간이 있으면 곧바로 후보자에게 다시 제안하고(리크루터·면접관 개입 없음), 없으면 면접관 전원에게 가능 시간을 처음부터 다시 수합한다 |
 
 ## 4. 화면 구성
 
@@ -82,7 +83,7 @@ interviews (면접 케이스)
 response_requests (이메일 응답 요청 — 토큰 기반)
   id                uuid, PK
   token             text, unique   -- 응답 링크에 포함되는 값
-  kind              text           -- 'interviewer' | 'candidate' | 'priority_confirm'
+  kind              text           -- 'interviewer' | 'candidate' | 'priority_confirm' | 'reschedule_request'
   interview_id       uuid, FK -> interviews.id, null
   interviewer_id     uuid, FK -> interviewers.id, null
   status            text          -- 'pending' | 'submitted'

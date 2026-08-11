@@ -7,7 +7,7 @@ import { SlotGrid } from "@/components/slot-grid";
 type Slot = { key: string; label: string };
 
 type Context = {
-  kind: "candidate" | "interviewer" | "priority_confirm";
+  kind: "candidate" | "interviewer" | "priority_confirm" | "reschedule_request";
   status: "pending" | "submitted";
   name: string;
   subtitle: string;
@@ -17,6 +17,7 @@ type Context = {
   candidateName?: string;
   position?: string;
   alreadyBusy?: string[];
+  currentSlotLabel?: string | null;
 };
 
 /** 후보자 응답 페이지에서 면접관 가용 시간이 바뀌었는지 확인하는 주기 */
@@ -169,6 +170,18 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
     setDone(true);
   }
 
+  async function submitReschedule() {
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch(`/api/respond/${token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError((await res.json()).error ?? "요청에 실패했습니다.");
+      return;
+    }
+    setDone(true);
+  }
+
   async function submitPriorityConfirm() {
     setSubmitting(true);
     setError(null);
@@ -247,6 +260,43 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
               ? "아직 면접 일정이 확정된 것은 아닙니다. 채용담당자가 최종 확정 후 안내드립니다."
               : "응답해주셔서 감사합니다. 창을 닫으셔도 됩니다."}
         </p>
+      </div>
+    );
+  }
+
+  if (ctx.kind === "reschedule_request") {
+    if (ctx.status === "submitted" || done) {
+      return (
+        <div className="mx-auto max-w-md p-6">
+          <p className="text-lg font-semibold">일정 변경 요청이 접수되었습니다.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            가능한 시간을 다시 확인해 새로운 일정을 안내드리겠습니다. 창을 닫으셔도 됩니다.
+          </p>
+        </div>
+      );
+    }
+    return (
+      <div className="mx-auto flex max-w-md flex-col gap-5 p-6">
+        <div>
+          <h1 className="text-xl font-bold">{ctx.name}님, 일정을 변경하시겠어요?</h1>
+          <p className="text-sm text-muted-foreground">{ctx.subtitle}</p>
+        </div>
+        {ctx.currentSlotLabel ? (
+          <p className="text-sm">
+            현재 확정된 시간: <span className="font-mono font-semibold">{ctx.currentSlotLabel}</span>
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            이미 다른 일정 조율이 진행 중입니다. 잠시 후 새로운 안내를 받으실 수 있습니다.
+          </p>
+        )}
+        <p className="text-sm">
+          아래 버튼을 누르면 이 시간을 취소하고, 가능한 다른 시간을 다시 찾아 안내드립니다.
+        </p>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <Button onClick={submitReschedule} disabled={submitting || !ctx.currentSlotLabel} variant="destructive">
+          {submitting ? "처리 중..." : "네, 다른 시간을 알아봐주세요"}
+        </Button>
       </div>
     );
   }

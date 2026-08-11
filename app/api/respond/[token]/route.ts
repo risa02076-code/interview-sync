@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateUpcomingSlots, formatSlotLabel } from "@/lib/slots";
 import { sendCandidateInvite } from "@/lib/sendCandidateInvite";
+import { sendInterviewerInvites } from "@/lib/sendInterviewerInvites";
 import { recommendLeastConflictSlots, requiresRoom } from "@/lib/matching";
 import { requestMoreAvailability, MAX_AVAILABILITY_ROUNDS } from "@/lib/requestMoreAvailability";
 import { requestPriorityConfirmation } from "@/lib/requestPriorityConfirmation";
@@ -51,6 +52,27 @@ export async function GET(_request: Request, { params }: Params) {
       name: interview?.candidate_name,
       subtitle: interview?.position,
       slots,
+    });
+  }
+
+  if (reqRow.kind === "reschedule_request") {
+    const { data: interview } = await supabase
+      .from("interviews")
+      .select("candidate_name, position, matched_slot, status")
+      .eq("id", reqRow.interview_id)
+      .single();
+
+    return NextResponse.json({
+      kind: "reschedule_request",
+      status: reqRow.status,
+      name: interview?.candidate_name,
+      subtitle: interview?.position,
+      // 이미 다른 경로로 재조율이 시작된 뒤라면(더 이상 confirmed가 아님) 다시 누를 필요가 없다고 알려준다
+      currentSlotLabel:
+        interview?.status === "confirmed" && interview.matched_slot
+          ? formatSlotLabel(interview.matched_slot)
+          : null,
+      slots: [],
     });
   }
 
@@ -207,6 +229,73 @@ export async function POST(request: Request, { params }: Params) {
       .from("interviewers")
       .update({ busy_slots: [...keptBusy, ...nowUnavailable] })
       .eq("id", reqRow.interviewer_id);
+  } else if (reqRow.kind === "reschedule_request") {
+    // 확정된 일정을 후보자가 바꿔달라고 요청한 경우. 기존 매칭된 시간을 먼저 비우고,
+    // 이미 수합해둔 면접관 데이터로 다른 공통 시간이 있으면(시나리오 A) 곧바로 후보자에게
+    // 다시 제안하고, 없으면(시나리오 B) 면접관 전원에게 가능 시간을 처음부터 다시 수합한다.
+    const { data: interview } = await supabase
+      .from("interviews")
+      .select("*")
+      .eq("id", reqRow.interview_id)
+      .single();
+
+    if (interview && interview.status === "confirmed" && interview.matched_slot) {
+      const oldSlot = interview.matched_slot as string;
+
+      const { data: panel } = await supabase.from("interviewers").select("*").in("id", interview.panel);
+      for (const p of panel ?? []) {
+        if ((p.busy_slots as string[]).includes(oldSlot)) {
+          await supabase
+            .from("interviewers")
+            .update({ busy_slots: (p.busy_slots as string[]).filter((s) => s !== oldSlot) })
+            .eq("id", p.id);
+        }
+      }
+      if (interview.room_id) {
+        const { data: room } = await supabase.from("rooms").select("*").eq("id", interview.room_id).single();
+        if (room && (room.busy_slots as string[]).includes(oldSlot)) {
+          await supabase
+            .from("rooms")
+            .update({ busy_slots: (room.busy_slots as string[]).filter((s) => s !== oldSlot) })
+            .eq("id", interview.room_id);
+        }
+      }
+
+      await supabase
+        .from("interviews")
+        .update({
+          status: "pending",
+          matched_slot: null,
+          room_id: null,
+          confirmation_sent_at: null,
+          preferred_slots: [],
+          note: "후보자가 일정 변경을 요청함 — 재조율 중",
+        })
+        .eq("id", interview.id);
+
+      const { data: freshPanel } = await supabase.from("interviewers").select("*").in("id", interview.panel);
+      const needsRoom = requiresRoom(interview.interview_type);
+      const { data: rooms } = needsRoom ? await supabase.from("rooms").select("*") : { data: [] };
+      const recommendations = recommendLeastConflictSlots(freshPanel ?? [], rooms ?? [], needsRoom, 5);
+      const hasPerfectMatch = recommendations.length > 0 && recommendations[0].conflicts.length === 0;
+
+      const origin = new URL(request.url).origin;
+      const { data: freshInterview } = await supabase
+        .from("interviews")
+        .select("*")
+        .eq("id", interview.id)
+        .single();
+
+      if (freshInterview) {
+        if (hasPerfectMatch) {
+          await supabase.from("interviews").update({ stage: "candidate_pending" }).eq("id", interview.id);
+          await sendCandidateInvite(supabase, freshInterview, origin);
+        } else {
+          await supabase.from("interviews").update({ availability_round: 1 }).eq("id", interview.id);
+          await sendInterviewerInvites(supabase, freshInterview, origin);
+        }
+      }
+    }
   } else {
     await supabase
       .from("interviewers")
@@ -313,7 +402,7 @@ export async function POST(request: Request, { params }: Params) {
         .eq("id", reqRow.interview_id)
         .single();
       if (interview && interview.status === "pending") {
-        await confirmFromPriorities(supabase, interview);
+        await confirmFromPriorities(supabase, interview, new URL(request.url).origin);
       }
     }
   }

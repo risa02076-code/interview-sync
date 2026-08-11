@@ -15,11 +15,15 @@ type Interview = {
  * 전원 가능한 첫 번째 시간으로 자동 확정한다. 응답하는 동안 busy_slots가 이미
  * 최신 상태로 갱신돼 있으므로, matchAndPersist의 실검증이 곧 "전원 가능 여부" 확인이 된다.
  */
-export async function confirmFromPriorities(supabase: SupabaseClient, interview: Interview): Promise<boolean> {
+export async function confirmFromPriorities(
+  supabase: SupabaseClient,
+  interview: Interview,
+  origin: string,
+): Promise<boolean> {
   for (const slot of interview.preferred_slots) {
     const result = await matchAndPersist(supabase, interview.id, [slot], interview.panel, interview.interview_type);
     if (result?.status === "confirmed") {
-      await sendConfirmationEmail(supabase, result);
+      await sendConfirmationEmail(supabase, result, origin);
       return true;
     }
   }
