@@ -1,0 +1,66 @@
+import { SupabaseClient } from "@supabase/supabase-js";
+import { generateToken } from "./token";
+import { sendEmail } from "./email";
+import { formatSlotLabel } from "./slots";
+
+type Interview = {
+  id: string;
+  candidate_name: string;
+  position: string;
+  panel: string[];
+  preferred_slots: string[];
+};
+
+export const RANK_MEDAL = ["🥇", "🥈", "🥉"];
+
+/**
+ * 후보자가 제출한 1~3순위 시간을 면접관 전원에게 보내, 각 시간에 참석 가능한지
+ * 확인 요청한다. 리크루터가 수동으로 확정하는 대신, 전원이 응답을 마치면
+ * confirmFromPriorities가 전원 가능한 가장 높은 순위로 자동 확정한다.
+ */
+export async function requestPriorityConfirmation(
+  supabase: SupabaseClient,
+  interview: Interview,
+  origin: string,
+): Promise<{ ok: true; sent: number } | { ok: false; error: string }> {
+  const { data: panelInterviewers, error } = await supabase
+    .from("interviewers")
+    .select("*")
+    .in("id", interview.panel);
+  if (error) return { ok: false, error: error.message };
+
+  const list = interview.preferred_slots
+    .map((s, i) => `${RANK_MEDAL[i] ?? `${i + 1}순위`} ${formatSlotLabel(s)}`)
+    .join("<br/>");
+
+  let sent = 0;
+  for (const interviewer of panelInterviewers) {
+    if (!interviewer.email) continue;
+    const token = generateToken();
+    await supabase.from("response_requests").insert({
+      token,
+      kind: "priority_confirm",
+      interview_id: interview.id,
+      interviewer_id: interviewer.id,
+      confirm_slots: interview.preferred_slots,
+    });
+
+    const link = `${origin}/respond/${token}`;
+    await sendEmail(
+      interviewer.email,
+      `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 최종 면접 시간 확인 요청`,
+      `
+        <p>안녕하세요, ${interviewer.name}님.</p>
+        <p><b>${interview.candidate_name}</b>님(${interview.position})이 아래 순서로 면접 시간을 제안했습니다.
+        참석 가능한 시간을 모두 확인해주세요.</p>
+        <p>${list}</p>
+        <p><a href="${link}">${link}</a></p>
+      `,
+    );
+    sent += 1;
+  }
+
+  await supabase.from("interviews").update({ stage: "priority_confirm_pending" }).eq("id", interview.id);
+
+  return { ok: true, sent };
+}

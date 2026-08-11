@@ -34,7 +34,8 @@ create table if not exists interviews (
   matched_slot text,
   room_id uuid references rooms(id),
   status text not null default 'pending',
-  -- stage: 'created' | 'interviewer_pending' | 'interviewer_done' | 'candidate_pending' | 'candidate_done'
+  -- stage: 'created' | 'interviewer_pending' | 'interviewer_done' | 'candidate_pending'
+  --        | 'candidate_done' | 'priority_confirm_pending'
   stage text not null default 'created',
   confirmation_sent_at timestamptz,
   -- 면접 전날 리마인드 메일 발송 시각 (케이스당 1회만 발송)
@@ -51,7 +52,7 @@ create table if not exists interviews (
 create table if not exists response_requests (
   id uuid primary key default gen_random_uuid(),
   token text not null unique,
-  kind text not null, -- 'candidate' | 'interviewer'
+  kind text not null, -- 'candidate' | 'interviewer' | 'priority_confirm'
   interview_id uuid references interviews(id) on delete cascade,
   interviewer_id uuid references interviewers(id) on delete cascade,
   status text not null default 'pending', -- 'pending' | 'submitted'
@@ -59,7 +60,10 @@ create table if not exists response_requests (
   submitted_at timestamptz,
   -- 미응답 독촉 메일 발송 이력 (마지막 발송 시각 / 누적 횟수)
   reminded_at timestamptz,
-  reminder_count int not null default 0
+  reminder_count int not null default 0,
+  -- kind='priority_confirm'일 때만 사용: 후보자가 제출한 1~3순위 중 이 면접관에게
+  -- 참석 가능 여부를 물어본 시간들(발송 시점에 고정)
+  confirm_slots text[]
 );
 
 -- RLS 활성화, 정책은 만들지 않음 (API 라우트가 서비스 롤 키로만 접근 — 브라우저 직접 접근 차단)

@@ -11,7 +11,13 @@ export type InterviewRow = {
   matched_slot: string | null;
   roomName: string | null;
   status: "confirmed" | "rescheduled" | "escalated" | "pending";
-  stage: "created" | "interviewer_pending" | "interviewer_done" | "candidate_pending" | "candidate_done";
+  stage:
+    | "created"
+    | "interviewer_pending"
+    | "interviewer_done"
+    | "candidate_pending"
+    | "candidate_done"
+    | "priority_confirm_pending";
   interviewerProgress: { submitted: number; total: number };
   candidateResponded: boolean;
   confirmation_sent_at: string | null;

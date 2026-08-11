@@ -40,6 +40,7 @@ const IN_PROGRESS_STATUSES: DisplayStatus[] = [
   "awaiting_interviewer",
   "awaiting_candidate",
   "awaiting_recruiter_pick",
+  "awaiting_priority_confirm",
   "needs_reschedule",
   "coordinated",
 ];

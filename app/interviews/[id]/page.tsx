@@ -19,7 +19,13 @@ type InterviewerDetail = {
 };
 type RoomDetail = { id: string; name: string; busy_slots: string[] };
 
-type Stage = "created" | "interviewer_pending" | "interviewer_done" | "candidate_pending" | "candidate_done";
+type Stage =
+  | "created"
+  | "interviewer_pending"
+  | "interviewer_done"
+  | "candidate_pending"
+  | "candidate_done"
+  | "priority_confirm_pending";
 
 type InterviewDetail = {
   id: string;
@@ -47,6 +53,7 @@ const STAGE_LABEL: Record<Stage, string> = {
   interviewer_done: "면접관 응답 완료 — 후보자 발송 가능",
   candidate_pending: "후보자 응답 대기 중",
   candidate_done: "후보자 응답 완료",
+  priority_confirm_pending: "면접관 전원에게 최종 확인 중",
 };
 
 export default function InterviewDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -208,6 +215,9 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
   const displayStatus = deriveDisplayStatus(interview);
   const meta = STATUS_META[displayStatus];
   const dday = dDayLabel(interview.matched_slot);
+  // 후보자가 순위를 제출한 뒤부터는(자동 확인이 진행 중이든 아니든) 리크루터가 언제든
+  // 직접 그중 하나를 눌러 먼저 확정할 수 있게 열어둔다.
+  const showPriorityPanel = interview.status === "pending" && interview.preferred_slots.length > 0;
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
@@ -257,19 +267,20 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
           <span className="font-semibold">확정 일정: </span>
           {formatSlotLabel(interview.matched_slot!)} · {interview.roomName ?? interview.interview_type}
         </p>
-      ) : displayStatus !== "awaiting_recruiter_pick" ? (
+      ) : !showPriorityPanel ? (
         <p className="text-sm text-muted-foreground">
           희망 시간대:{" "}
           {interview.preferred_slots.map((s) => formatSlotLabel(s)).join(", ") || "미입력"}
         </p>
       ) : null}
 
-      {displayStatus === "awaiting_recruiter_pick" && (
+      {showPriorityPanel && (
         <div className="flex flex-col gap-2 rounded-md border p-3">
           <p className="text-sm font-semibold">후보자가 제출한 우선순위</p>
           <p className="text-xs text-muted-foreground">
-            제출 이후 면접관 일정이 바뀌었을 수 있어, 확정을 누르면 그 자리에서 다시 확인합니다. 이미
-            지나간 시간이면 다른 순위를 눌러주세요.
+            {displayStatus === "awaiting_priority_confirm"
+              ? "면접관 전원에게 이 시간들 참석 가능 여부를 확인 요청했습니다. 전원 가능한 가장 높은 순위로 자동 확정됩니다. 기다리지 않고 먼저 확정하고 싶으면 아래에서 직접 눌러도 됩니다(그 자리에서 다시 검증합니다)."
+              : "확정을 누르면 그 자리에서 지금도 비어있는지 다시 확인합니다. 이미 지나간 시간이면 다른 순위를 눌러주세요."}
           </p>
           <div className="flex flex-col gap-1.5">
             {interview.preferred_slots.map((slot, i) => (

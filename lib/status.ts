@@ -2,6 +2,7 @@ export type DisplayStatus =
   | "awaiting_interviewer"
   | "awaiting_candidate"
   | "awaiting_recruiter_pick"
+  | "awaiting_priority_confirm"
   | "needs_reschedule"
   | "coordinated"
   | "confirmed"
@@ -9,7 +10,13 @@ export type DisplayStatus =
 
 type InterviewLike = {
   status: "confirmed" | "rescheduled" | "escalated" | "pending";
-  stage: "created" | "interviewer_pending" | "interviewer_done" | "candidate_pending" | "candidate_done";
+  stage:
+    | "created"
+    | "interviewer_pending"
+    | "interviewer_done"
+    | "candidate_pending"
+    | "candidate_done"
+    | "priority_confirm_pending";
   matched_slot: string | null;
   confirmation_sent_at: string | null;
 };
@@ -24,7 +31,9 @@ export function deriveDisplayStatus(iv: InterviewLike): DisplayStatus {
 
   if (iv.status === "pending") {
     if (iv.stage === "created" || iv.stage === "interviewer_pending") return "awaiting_interviewer";
-    // 후보자가 1~3순위를 제출했지만 아직 리크루터가 그중 하나를 최종 확정하지 않은 상태
+    // 후보자가 1~3순위를 제출한 뒤 면접관 전원에게 참석 가능 여부를 확인받는 중
+    if (iv.stage === "priority_confirm_pending") return "awaiting_priority_confirm";
+    // 순위는 제출됐지만 아직 확인 요청이 나가기 전(거의 순간적으로 지나가는 상태) — 안전장치
     if (iv.stage === "candidate_done") return "awaiting_recruiter_pick";
     return "awaiting_candidate"; // interviewer_done(발송 직전) 또는 candidate_pending
   }
@@ -51,6 +60,11 @@ export const STATUS_META: Record<
   },
   awaiting_recruiter_pick: {
     label: "리크루터 확정 필요",
+    emoji: "🟣",
+    badgeClass: "bg-purple-100 text-purple-800 border-purple-300",
+  },
+  awaiting_priority_confirm: {
+    label: "면접관 최종 확인 중",
     emoji: "🟣",
     badgeClass: "bg-purple-100 text-purple-800 border-purple-300",
   },

@@ -7,13 +7,16 @@ import { SlotGrid } from "@/components/slot-grid";
 type Slot = { key: string; label: string };
 
 type Context = {
-  kind: "candidate" | "interviewer";
+  kind: "candidate" | "interviewer" | "priority_confirm";
   status: "pending" | "submitted";
   name: string;
   subtitle: string;
   slots: Slot[];
   preSelected?: string[];
   othersBusy?: string[];
+  candidateName?: string;
+  position?: string;
+  alreadyBusy?: string[];
 };
 
 /** 후보자 응답 페이지에서 면접관 가용 시간이 바뀌었는지 확인하는 주기 */
@@ -48,6 +51,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   const { token } = use(params);
   const [ctx, setCtx] = useState<Context | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
+  const [available, setAvailable] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -75,6 +79,11 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
         // 재문의 라운드에서는 이전에 자신이 표시했던 불가능한 시간을 그대로 이어서 보여준다.
         if (data.kind === "interviewer" && data.preSelected?.length) {
           setSelected(data.preSelected);
+        }
+        // 이미 불가능하다고 표시된 시간을 제외한 나머지를 기본으로 "참석 가능"에 체크해둔다.
+        if (data.kind === "priority_confirm") {
+          const busy = new Set(data.alreadyBusy ?? []);
+          setAvailable(new Set(data.slots.map((s) => s.key).filter((k) => !busy.has(k))));
         }
       })
       .catch((e) => setError(e.message));
@@ -133,6 +142,15 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
     });
   }
 
+  function toggleAvailable(key: string) {
+    setAvailable((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   async function submit() {
     setSubmitting(true);
     setError(null);
@@ -148,6 +166,22 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       return;
     }
     if (isCandidate) setDoneReason("priorities-submitted");
+    setDone(true);
+  }
+
+  async function submitPriorityConfirm() {
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch(`/api/respond/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ availableSlots: Array.from(available) }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError((await res.json()).error ?? "제출에 실패했습니다.");
+      return;
+    }
     setDone(true);
   }
 
@@ -195,10 +229,11 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
     return <p className="mx-auto max-w-md p-6 text-sm text-muted-foreground">불러오는 중...</p>;
   }
   const isCandidate = ctx.kind === "candidate";
+  const isPriorityConfirm = ctx.kind === "priority_confirm";
 
-  // 후보자 응답은 한 번 제출하면 끝나는 화면으로 마무리한다. 면접관 응답은 링크를
-  // 계속 재사용할 수 있어야 하므로(나중에 일정이 더 생기면 같은 링크에서 다시 고쳐
-  // 제출), 여기서 화면을 완전히 끝내지 않고 아래에서 배너만 보여준다.
+  // 후보자 응답은 한 번 제출하면 끝나는 화면으로 마무리한다. 면접관 쪽 응답(불가능
+  // 시간 표시·우선순위 확인 모두)은 링크를 계속 재사용할 수 있어야 하므로(나중에
+  // 일정이 더 생기면 같은 링크에서 다시 고쳐 제출), 화면을 끝내지 않고 배너만 보여준다.
   if (isCandidate && (ctx.status === "submitted" || done)) {
     return (
       <div className="mx-auto max-w-md p-6">
@@ -215,6 +250,52 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       </div>
     );
   }
+
+  if (isPriorityConfirm) {
+    return (
+      <div className="mx-auto flex max-w-md flex-col gap-5 p-6">
+        <div>
+          <h1 className="text-xl font-bold">{ctx.name}님, 최종 면접 시간을 확인해주세요</h1>
+          <p className="text-sm text-muted-foreground">
+            {ctx.candidateName}님({ctx.position}) 후보자가 제출한 순위입니다.
+          </p>
+        </div>
+
+        <p className="text-sm">
+          참석 가능한 시간을 모두 선택해주세요. 전원이 가능하다고 답한 가장 높은 순위로 자동 확정됩니다.
+        </p>
+
+        {(ctx.status === "submitted" || done) && (
+          <p className="rounded-md bg-primary/10 p-2.5 text-sm text-primary">
+            이미 제출하셨습니다. 이후에 일정이 바뀌면 이 링크에서 언제든 다시 고쳐 제출하실 수 있습니다.
+          </p>
+        )}
+
+        <div className="flex flex-col gap-2">
+          {ctx.slots.map((slot, i) => (
+            <label
+              key={slot.key}
+              className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm has-[:checked]:border-primary has-[:checked]:bg-primary/10"
+            >
+              <input
+                type="checkbox"
+                checked={available.has(slot.key)}
+                onChange={() => toggleAvailable(slot.key)}
+              />
+              {RANK_MEDAL[i] ?? `${i + 1}순위`} {slot.label}
+            </label>
+          ))}
+        </div>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <Button onClick={submitPriorityConfirm} disabled={submitting}>
+          {submitting ? "처리 중..." : ctx.status === "submitted" || done ? "다시 제출하기" : "참석 여부 제출"}
+        </Button>
+      </div>
+    );
+  }
+
   const justRemovedKeys = new Set(justRemoved.map((s) => s.key));
   // 방금 사라진 시간도 한 번은 취소선으로 보여줘야 하니, 최신 목록에 합쳐서 그룹핑한다.
   const displaySlots = isCandidate

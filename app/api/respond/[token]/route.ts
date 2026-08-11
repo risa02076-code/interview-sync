@@ -4,6 +4,8 @@ import { generateUpcomingSlots, formatSlotLabel } from "@/lib/slots";
 import { sendCandidateInvite } from "@/lib/sendCandidateInvite";
 import { recommendLeastConflictSlots, requiresRoom } from "@/lib/matching";
 import { requestMoreAvailability, MAX_AVAILABILITY_ROUNDS } from "@/lib/requestMoreAvailability";
+import { requestPriorityConfirmation } from "@/lib/requestPriorityConfirmation";
+import { confirmFromPriorities } from "@/lib/confirmFromPriorities";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -49,6 +51,32 @@ export async function GET(_request: Request, { params }: Params) {
       name: interview?.candidate_name,
       subtitle: interview?.position,
       slots,
+    });
+  }
+
+  if (reqRow.kind === "priority_confirm") {
+    const { data: interview } = await supabase
+      .from("interviews")
+      .select("candidate_name, position")
+      .eq("id", reqRow.interview_id)
+      .single();
+    const { data: interviewer } = await supabase
+      .from("interviewers")
+      .select("name, role, busy_slots")
+      .eq("id", reqRow.interviewer_id)
+      .single();
+
+    const confirmSlots = (reqRow.confirm_slots as string[] | null) ?? [];
+    return NextResponse.json({
+      kind: "priority_confirm",
+      status: reqRow.status,
+      name: interviewer?.name,
+      subtitle: interviewer?.role,
+      candidateName: interview?.candidate_name,
+      position: interview?.position,
+      slots: confirmSlots.map((key) => ({ key, label: formatSlotLabel(key) })),
+      // 이미 이 시간이 불가능하다고 표시돼 있으면 기본값으로 "불가능"에 맞춰 보여준다
+      alreadyBusy: confirmSlots.filter((s) => (interviewer?.busy_slots ?? []).includes(s)),
     });
   }
 
@@ -100,10 +128,11 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { token } = await params;
-  const { selectedSlots, preferredSlots, allUnavailable } = (await request.json()) as {
+  const { selectedSlots, preferredSlots, allUnavailable, availableSlots } = (await request.json()) as {
     selectedSlots?: string[];
     preferredSlots?: string[];
     allUnavailable?: boolean;
+    availableSlots?: string[];
   };
 
   const supabase = createAdminClient();
@@ -113,9 +142,10 @@ export async function POST(request: Request, { params }: Params) {
     .eq("token", token)
     .single();
   if (error) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 404 });
-  // 면접관 링크는 1회용으로 막지 않는다 — 나중에 일정이 더 생기면 같은 링크에서
-  // 언제든 다시 고쳐 제출할 수 있어야 한다. 후보자 응답은 여전히 1회로 제한한다.
-  if (reqRow.status === "submitted" && reqRow.kind !== "interviewer") {
+  // 면접관 응답 링크(불가능 시간 표시, 우선순위 확인 모두)는 1회용으로 막지 않는다 —
+  // 나중에 일정이 더 생기면 같은 링크에서 언제든 다시 고쳐 제출할 수 있어야 한다.
+  // 후보자 응답만 1회로 제한한다.
+  if (reqRow.status === "submitted" && reqRow.kind === "candidate") {
     return NextResponse.json({ error: "이미 제출된 응답입니다." }, { status: 400 });
   }
 
@@ -143,13 +173,40 @@ export async function POST(request: Request, { params }: Params) {
       }
     }
   } else if (reqRow.kind === "candidate") {
-    // 후보자는 1~3순위를 제출할 뿐, 여기서 곧바로 매칭·확정하지 않는다. 제출과 확정
-    // 사이에 면접관 일정이 바뀔 위험을 줄이기 위해, 리크루터가 순위 중 하나를 최종
-    // 확정하는 단계를 둔다(app/api/interviews/[id]/confirm-priority).
+    // 후보자는 1~3순위를 제출할 뿐, 여기서 곧바로 매칭·확정하지 않는다. 제출 즉시
+    // 면접관 전원에게 그 1~3개 시간 각각 참석 가능한지 확인 요청을 보내고, 전원이
+    // 가능하다고 한 가장 높은 순위로 자동 확정한다(requestPriorityConfirmation).
+    const finalSlots = preferredSlots ?? selectedSlots ?? [];
     await supabase
       .from("interviews")
-      .update({ preferred_slots: preferredSlots ?? selectedSlots ?? [], stage: "candidate_done" })
+      .update({ preferred_slots: finalSlots, stage: "candidate_done" })
       .eq("id", reqRow.interview_id);
+
+    const { data: interview } = await supabase
+      .from("interviews")
+      .select("*")
+      .eq("id", reqRow.interview_id)
+      .single();
+    if (interview) {
+      const origin = new URL(request.url).origin;
+      await requestPriorityConfirmation(supabase, interview, origin);
+    }
+  } else if (reqRow.kind === "priority_confirm") {
+    // 이 시간 중 참석 가능한 시간만 남기고, 나머지는 실제 캘린더(busy_slots)에도
+    // 반영한다 — matchAndPersist는 busy_slots만 보고 검증하므로, 여기서 한 답변이
+    // 곧 실제 가용 여부의 근거가 되게 하기 위함이다.
+    const offered = (reqRow.confirm_slots as string[] | null) ?? [];
+    const nowUnavailable = offered.filter((s) => !(availableSlots ?? []).includes(s));
+    const { data: interviewer } = await supabase
+      .from("interviewers")
+      .select("busy_slots")
+      .eq("id", reqRow.interviewer_id)
+      .single();
+    const keptBusy = ((interviewer?.busy_slots as string[] | null) ?? []).filter((s) => !offered.includes(s));
+    await supabase
+      .from("interviewers")
+      .update({ busy_slots: [...keptBusy, ...nowUnavailable] })
+      .eq("id", reqRow.interviewer_id);
   } else {
     await supabase
       .from("interviewers")
@@ -234,6 +291,29 @@ export async function POST(request: Request, { params }: Params) {
             })
             .eq("id", interview.id);
         }
+      }
+    }
+  }
+
+  // 우선순위 확인 요청에 면접관 전원이 응답을 마쳤으면, 전원 가능한 가장 높은
+  // 순위로 자동 확정한다. 이미 확정·에스컬레이션된 뒤(늦게 다시 고쳐 제출한 경우)라면
+  // 다시 실행하지 않는다.
+  if (reqRow.kind === "priority_confirm" && reqRow.interview_id) {
+    const { data: allConfirmRequests } = await supabase
+      .from("response_requests")
+      .select("status")
+      .eq("interview_id", reqRow.interview_id)
+      .eq("kind", "priority_confirm");
+    const allDone = allConfirmRequests?.every((r) => r.status === "submitted");
+
+    if (allDone) {
+      const { data: interview } = await supabase
+        .from("interviews")
+        .select("*")
+        .eq("id", reqRow.interview_id)
+        .single();
+      if (interview && interview.status === "pending") {
+        await confirmFromPriorities(supabase, interview);
       }
     }
   }
