@@ -148,8 +148,8 @@ export function SlotGrid({
                           : isSelected
                             ? "border-primary bg-primary text-primary-foreground"
                             : warnColor
-                              ? "border-amber-300"
-                              : "border-border hover:border-primary/50"
+                              ? "border-amber-300 bg-background"
+                              : "border-border bg-background hover:border-primary/50"
                       }`}
                       style={!isSelected && tint ? { backgroundColor: tint } : undefined}
                     />
