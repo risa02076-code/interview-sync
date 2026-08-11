@@ -65,15 +65,15 @@ export function findMatch(
 
 export type SlotRecommendation = { slot: string; conflicts: string[] };
 
-/** 후보자에게 한 번에 제안하는 추천 시간의 최대 개수 */
-const MAX_RECOMMENDATIONS = 3;
+/** 충돌이 있는(완전히 겹치지 않는 시간이 하나도 없는) 경우에만 이 개수로 제한한다 */
+const MAX_FALLBACK_RECOMMENDATIONS = 3;
 
 /**
  * 패널 전원이 동시에 가능한 시간이 없을 수도 있다는 전제 아래, 전체 후보 슬롯의
  * "충돌(면접관 불가능 + 회의실 없음)" 점수를 모두 계산해 가장 낮은 점수와 동점인
- * 시간들을 추천한다. 전원 동시 가능(충돌 0)한 시간이 여러 개면 그 여러 개를 그대로
- * 반환하고, 하나도 없으면 그다음으로 충돌이 적은 시간들을 대안으로 반환한다.
- * (많아도 MAX_RECOMMENDATIONS개까지만 — 후보자에게 선택지를 너무 많이 주지 않기 위함)
+ * 시간들을 추천한다. 전원 동시 가능(충돌 0)한 시간은 후보자가 고를 여지를 넓히기
+ * 위해 개수 제한 없이 전부 반환하고, 하나도 없으면 그다음으로 충돌이 적은 시간들을
+ * 최대 MAX_FALLBACK_RECOMMENDATIONS개까지만 대안으로 반환한다.
  */
 export function recommendLeastConflictSlots(
   panelInterviewers: Interviewer[],
@@ -89,8 +89,7 @@ export function recommendLeastConflictSlots(
   if (!scored.length) return [];
 
   const minScore = Math.min(...scored.map((s) => s.score));
-  return scored
-    .filter((s) => s.score === minScore)
-    .slice(0, MAX_RECOMMENDATIONS)
-    .map(({ slot, conflicts }) => ({ slot, conflicts }));
+  const tied = scored.filter((s) => s.score === minScore);
+  const limited = minScore === 0 ? tied : tied.slice(0, MAX_FALLBACK_RECOMMENDATIONS);
+  return limited.map(({ slot, conflicts }) => ({ slot, conflicts }));
 }

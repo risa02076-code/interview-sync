@@ -58,6 +58,7 @@ export async function sendConfirmationEmail(
       `
         <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 일정이 아래와 같이 확정되었습니다.</p>
         <p><b>${when}</b> · ${roomName}</p>
+        <p style="color:#888;font-size:12px">이 시간에 참석이 어려우시거나 문제가 있으면 리크루터에게 알려주세요.</p>
       `,
     );
   }

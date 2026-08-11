@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { matchAndPersist } from "@/lib/applyMatch";
 import { generateUpcomingSlots, formatSlotLabel } from "@/lib/slots";
 import { sendCandidateInvite } from "@/lib/sendCandidateInvite";
+import { sendConfirmationEmail } from "@/lib/sendConfirmationEmail";
 import { recommendLeastConflictSlots, requiresRoom } from "@/lib/matching";
 import { requestMoreAvailability, MAX_AVAILABILITY_ROUNDS } from "@/lib/requestMoreAvailability";
 
@@ -146,7 +147,7 @@ export async function POST(request: Request, { params }: Params) {
       .select("panel, interview_type")
       .eq("id", reqRow.interview_id)
       .single();
-    await matchAndPersist(
+    const matched = await matchAndPersist(
       supabase,
       reqRow.interview_id,
       selectedSlots ?? [],
@@ -154,6 +155,13 @@ export async function POST(request: Request, { params }: Params) {
       interview!.interview_type,
     );
     await supabase.from("interviews").update({ stage: "candidate_done" }).eq("id", reqRow.interview_id);
+
+    // 확정되면 리크루터가 따로 "확정 메일 발송"을 누르지 않아도 곧바로 전원에게
+    // 안내한다 — "확정됐습니다, 문제 있으면 알려주세요" 정도의 가벼운 알림으로,
+    // 전체를 다시 왕복시키는 면접관 재확인 절차 없이도 변경 여지를 열어둔다.
+    if (matched?.status === "confirmed") {
+      await sendConfirmationEmail(supabase, matched);
+    }
   } else {
     await supabase
       .from("interviewers")
