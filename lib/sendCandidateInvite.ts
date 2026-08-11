@@ -11,6 +11,7 @@ type Interview = {
   position: string;
   panel: string[];
   interview_type: string;
+  excluded_slots?: string[] | null;
 };
 
 /**
@@ -39,6 +40,8 @@ export async function sendCandidateInvite(
     (panelInterviewers ?? []) as Interviewer[],
     (rooms ?? []) as Room[],
     needsRoom,
+    5,
+    interview.excluded_slots ?? [],
   );
   if (!recommendations.length) {
     return { ok: false, error: "추천할 수 있는 시간대가 없습니다." };

@@ -45,6 +45,9 @@ create table if not exists interviews (
   -- 면접관 전원 동시 가능 시간이 없어 조회 기간을 넓혀 재문의한 횟수(1부터 시작).
   -- 상한(MAX_AVAILABILITY_ROUNDS) 넘으면 후보자 안내 없이 escalated로 리크루터에게 넘긴다.
   availability_round int not null default 1,
+  -- 후보자가 "이 시간엔 참석이 어렵다"며 일정 변경을 요청한 시간들. 재조율 시
+  -- 추천/제안 후보에서 항상 제외한다(같은 시간을 다시 제안하는 것을 막기 위함).
+  excluded_slots text[] not null default '{}',
   note text,
   created_at timestamptz not null default now()
 );

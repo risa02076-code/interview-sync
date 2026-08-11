@@ -80,12 +80,16 @@ export function recommendLeastConflictSlots(
   rooms: Room[],
   roomRequired: boolean,
   businessDays: number = 5,
+  excludeSlots: string[] = [],
 ): SlotRecommendation[] {
-  const scored = generateUpcomingSlots(businessDays).map((s) => {
-    const conflicts = panelInterviewers.filter((p) => p.busy_slots.includes(s.key)).map((p) => p.name);
-    const roomBlocked = roomRequired && !rooms.some((r) => !r.busy_slots.includes(s.key));
-    return { slot: s.key, conflicts, score: conflicts.length + (roomBlocked ? 1 : 0) };
-  });
+  const excluded = new Set(excludeSlots);
+  const scored = generateUpcomingSlots(businessDays)
+    .filter((s) => !excluded.has(s.key))
+    .map((s) => {
+      const conflicts = panelInterviewers.filter((p) => p.busy_slots.includes(s.key)).map((p) => p.name);
+      const roomBlocked = roomRequired && !rooms.some((r) => !r.busy_slots.includes(s.key));
+      return { slot: s.key, conflicts, score: conflicts.length + (roomBlocked ? 1 : 0) };
+    });
   if (!scored.length) return [];
 
   const minScore = Math.min(...scored.map((s) => s.score));

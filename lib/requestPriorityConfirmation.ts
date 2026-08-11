@@ -37,13 +37,16 @@ export async function requestPriorityConfirmation(
   for (const interviewer of panelInterviewers) {
     if (!interviewer.email) continue;
     const token = generateToken();
-    await supabase.from("response_requests").insert({
+    const { error: insErr } = await supabase.from("response_requests").insert({
       token,
       kind: "priority_confirm",
       interview_id: interview.id,
       interviewer_id: interviewer.id,
       confirm_slots: interview.preferred_slots,
     });
+    // 요청 자체가 저장 안 됐는데 메일을 보내면, 나중에 확인 답변을 받을 방법이 없는
+    // 요청이 나가버린다 — 이 사람은 건너뛰고 계속한다(한 명 실패가 전체를 막지 않도록).
+    if (insErr) continue;
 
     const link = `${origin}/respond/${token}`;
     await sendEmail(

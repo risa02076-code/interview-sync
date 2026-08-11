@@ -24,13 +24,14 @@ export async function GET(_request: Request, { params }: Params) {
   if (reqRow.kind === "candidate") {
     const { data: interview } = await supabase
       .from("interviews")
-      .select("candidate_name, position, panel, interview_type, availability_round")
+      .select("candidate_name, position, panel, interview_type, availability_round, excluded_slots")
       .eq("id", reqRow.interview_id)
       .single();
 
     // 이메일 발송 시점에 고정해둔 값을 보여주지 않고, 후보자가 응답을 미루는 동안 면접관
     // 일정이 바뀔 수 있으므로 지금 이 순간 기준으로 다시 계산한다. 후보자에게는 절대
-    // 충돌 있는 시간을 보여주지 않으므로, 완전히 겹치지 않는 시간만 남긴다.
+    // 충돌 있는 시간을 보여주지 않으므로, 완전히 겹치지 않는 시간만 남긴다. 후보자가
+    // 이미 "이 시간은 안 된다"고 요청했던 시간(excluded_slots)은 다시 추천하지 않는다.
     let slots: { key: string; label: string }[] = [];
     if (interview) {
       const { data: panelInterviewers } = await supabase
@@ -41,7 +42,13 @@ export async function GET(_request: Request, { params }: Params) {
       const { data: rooms } = needsRoom ? await supabase.from("rooms").select("*") : { data: [] };
       const businessDays = interview.availability_round * 5;
 
-      slots = recommendLeastConflictSlots(panelInterviewers ?? [], rooms ?? [], needsRoom, businessDays)
+      slots = recommendLeastConflictSlots(
+        panelInterviewers ?? [],
+        rooms ?? [],
+        needsRoom,
+        businessDays,
+        interview.excluded_slots ?? [],
+      )
         .filter((r) => r.conflicts.length === 0)
         .map((r) => ({ key: r.slot, label: formatSlotLabel(r.slot) }));
     }
@@ -261,6 +268,9 @@ export async function POST(request: Request, { params }: Params) {
         }
       }
 
+      // 방금 거절당한 이 시간은 앞으로도 다시 추천하지 않도록 영구히 제외 목록에 남긴다.
+      const excludedSlots = [...new Set([...(interview.excluded_slots as string[]), oldSlot])];
+
       await supabase
         .from("interviews")
         .update({
@@ -269,6 +279,7 @@ export async function POST(request: Request, { params }: Params) {
           room_id: null,
           confirmation_sent_at: null,
           preferred_slots: [],
+          excluded_slots: excludedSlots,
           note: "후보자가 일정 변경을 요청함 — 재조율 중",
         })
         .eq("id", interview.id);
@@ -276,7 +287,7 @@ export async function POST(request: Request, { params }: Params) {
       const { data: freshPanel } = await supabase.from("interviewers").select("*").in("id", interview.panel);
       const needsRoom = requiresRoom(interview.interview_type);
       const { data: rooms } = needsRoom ? await supabase.from("rooms").select("*") : { data: [] };
-      const recommendations = recommendLeastConflictSlots(freshPanel ?? [], rooms ?? [], needsRoom, 5);
+      const recommendations = recommendLeastConflictSlots(freshPanel ?? [], rooms ?? [], needsRoom, 5, excludedSlots);
       const hasPerfectMatch = recommendations.length > 0 && recommendations[0].conflicts.length === 0;
 
       const origin = new URL(request.url).origin;
