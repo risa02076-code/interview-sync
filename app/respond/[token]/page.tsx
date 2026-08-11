@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, use } from "react";
+import { useEffect, useState, useMemo, useRef, use } from "react";
 import { Button } from "@/components/ui/button";
 import { SlotGrid } from "@/components/slot-grid";
 
@@ -16,6 +16,34 @@ type Context = {
   othersBusy?: string[];
 };
 
+/** 후보자 응답 페이지에서 면접관 가용 시간이 바뀌었는지 확인하는 주기 */
+const POLL_MS = 20_000;
+
+const RANK_MEDAL = ["🥇", "🥈", "🥉"];
+const MAX_RANKS = 3;
+
+const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+
+/** ISO 슬롯 키를 날짜별로 묶는다 — 날짜를 먼저 고르고 그 안에서 시간을 고르는 느낌을 주기 위함 */
+function groupByDay(slots: Slot[]) {
+  const order: string[] = [];
+  const labels = new Map<string, string>();
+  const items = new Map<string, Slot[]>();
+
+  for (const slot of slots) {
+    const dt = new Date(slot.key);
+    const dayKey = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+    if (!items.has(dayKey)) {
+      order.push(dayKey);
+      labels.set(dayKey, `${dt.getMonth() + 1}/${dt.getDate()}(${DAY_NAMES[dt.getDay()]})`);
+      items.set(dayKey, []);
+    }
+    items.get(dayKey)!.push(slot);
+  }
+
+  return order.map((dayKey) => ({ dayKey, dayLabel: labels.get(dayKey)!, slots: items.get(dayKey)! }));
+}
+
 export default function RespondPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = use(params);
   const [ctx, setCtx] = useState<Context | null>(null);
@@ -23,7 +51,18 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
-  const [doneReason, setDoneReason] = useState<"confirmed" | "requested-more" | null>(null);
+  const [doneReason, setDoneReason] = useState<"confirmed" | "requested-more" | "priorities-submitted" | null>(
+    null,
+  );
+
+  // 후보자 화면에서 방금 사라진 시간(잠깐 취소선으로 보여줌)과, 이미 선택했다가
+  // 사라진 시간(경고 배너로 알려줘야 함)을 추적한다.
+  const [justRemoved, setJustRemoved] = useState<Slot[]>([]);
+  const [removedWhileRanked, setRemovedWhileRanked] = useState<Slot[]>([]);
+  const ctxRef = useRef<Context | null>(null);
+  const selectedRef = useRef<string[]>([]);
+  ctxRef.current = ctx;
+  selectedRef.current = selected;
 
   useEffect(() => {
     fetch(`/api/respond/${token}`)
@@ -33,10 +72,6 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       })
       .then((data: Context) => {
         setCtx(data);
-        // 제안된 시간이 하나뿐이면 굳이 클릭하게 하지 않고 미리 선택해둔다.
-        if (data.kind === "candidate" && data.slots.length === 1) {
-          setSelected([data.slots[0].key]);
-        }
         // 재문의 라운드에서는 이전에 자신이 표시했던 불가능한 시간을 그대로 이어서 보여준다.
         if (data.kind === "interviewer" && data.preSelected?.length) {
           setSelected(data.preSelected);
@@ -45,11 +80,48 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       .catch((e) => setError(e.message));
   }, [token]);
 
+  // 후보자 화면은 응답을 미루는 동안 면접관 일정이 바뀔 수 있으므로, 주기적으로
+  // 다시 조회해서 최신 시간으로 갱신한다. 사라진 시간은 조용히 지우지 않고 알려준다.
+  useEffect(() => {
+    if (ctx?.kind !== "candidate" || done) return;
+    const interval = setInterval(async () => {
+      const res = await fetch(`/api/respond/${token}`);
+      if (!res.ok) return;
+      const data: Context = await res.json();
+
+      const prevSlots = ctxRef.current?.slots ?? [];
+      const newKeys = new Set(data.slots.map((s) => s.key));
+      const removed = prevSlots.filter((s) => !newKeys.has(s.key));
+
+      if (removed.length) {
+        setJustRemoved(removed);
+        const removedKeys = new Set(removed.map((s) => s.key));
+        const currentRanked = selectedRef.current;
+        const droppedFromRanked = currentRanked.filter((k) => removedKeys.has(k));
+        if (droppedFromRanked.length) {
+          setRemovedWhileRanked((cur) => [
+            ...cur,
+            ...prevSlots.filter((s) => droppedFromRanked.includes(s.key)),
+          ]);
+          setSelected((cur) => cur.filter((k) => !removedKeys.has(k)));
+        }
+      } else {
+        setJustRemoved([]);
+      }
+
+      setCtx(data);
+    }, POLL_MS);
+    return () => clearInterval(interval);
+  }, [token, ctx?.kind, done]);
+
   const selectedSet = useMemo(() => new Set(selected), [selected]);
 
-  function selectCandidateSlot(key: string) {
-    // 후보자는 추천받은 시간 중 하나만 고르는 것이므로 항상 단일 선택으로 교체한다.
-    setSelected([key]);
+  function toggleCandidateRank(key: string) {
+    setSelected((cur) => {
+      if (cur.includes(key)) return cur.filter((k) => k !== key);
+      if (cur.length >= MAX_RANKS) return cur;
+      return [...cur, key];
+    });
   }
 
   function paintInterviewerSlot(key: string, select: boolean) {
@@ -64,17 +136,18 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   async function submit() {
     setSubmitting(true);
     setError(null);
+    const isCandidate = ctx?.kind === "candidate";
     const res = await fetch(`/api/respond/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ selectedSlots: selected }),
+      body: JSON.stringify(isCandidate ? { preferredSlots: selected } : { selectedSlots: selected }),
     });
     setSubmitting(false);
     if (!res.ok) {
       setError((await res.json()).error ?? "제출에 실패했습니다.");
       return;
     }
-    setDoneReason("confirmed");
+    setDoneReason(isCandidate ? "priorities-submitted" : "confirmed");
     setDone(true);
   }
 
@@ -128,31 +201,54 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
         <p className="mt-2 text-sm text-muted-foreground">
           {doneReason === "requested-more"
             ? "다른 시간대를 다시 확인해 새로운 일정을 안내드리겠습니다. 창을 닫으셔도 됩니다."
-            : "응답해주셔서 감사합니다. 창을 닫으셔도 됩니다."}
+            : doneReason === "priorities-submitted"
+              ? "리크루터가 확인 후 최종 확정 안내를 보내드리겠습니다. 창을 닫으셔도 됩니다."
+              : "응답해주셔서 감사합니다. 창을 닫으셔도 됩니다."}
         </p>
       </div>
     );
   }
 
   const isCandidate = ctx.kind === "candidate";
+  const justRemovedKeys = new Set(justRemoved.map((s) => s.key));
+  // 방금 사라진 시간도 한 번은 취소선으로 보여줘야 하니, 최신 목록에 합쳐서 그룹핑한다.
+  const displaySlots = isCandidate
+    ? [...ctx.slots, ...justRemoved.filter((s) => !ctx.slots.some((cs) => cs.key === s.key))]
+    : ctx.slots;
+  const dayGroups = isCandidate ? groupByDay(displaySlots) : [];
 
   return (
     <div className={`mx-auto flex flex-col gap-5 p-6 ${isCandidate ? "max-w-md" : "max-w-3xl"}`}>
       <div>
         <h1 className="text-xl font-bold">
           {ctx.name}
-          {isCandidate ? "님, 면접 일정을 제안드립니다" : "님, 면접 불가능한 시간을 알려주세요"}
+          {isCandidate ? "님, 면접 가능한 일정을 선택해주세요" : "님, 면접 불가능한 시간을 알려주세요"}
         </h1>
         <p className="text-sm text-muted-foreground">{ctx.subtitle}</p>
       </div>
 
       <p className="text-sm">
         {isCandidate
-          ? ctx.slots.length > 1
-            ? "아래 제안된 시간 중 편한 시간을 선택해 확정해주세요."
-            : "아래 제안된 시간을 확인 후 확정해주세요."
+          ? "아래 일정은 면접관의 최신 가능 시간을 반영하고 있습니다. 편한 순서대로 최대 3개까지 선택해주세요(클릭한 순서가 우선순위가 됩니다)."
           : "30분 단위 표에서 불가능한(면접이 어려운) 시간대를 모두 클릭하거나 드래그해서 선택해주세요."}
       </p>
+
+      {removedWhileRanked.length > 0 && (
+        <div className="flex items-start justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          <p>
+            ⚠️ 선택하신 면접 시간이 변경되었습니다.{" "}
+            {removedWhileRanked.map((s) => s.label).join(", ")}은(는) 면접관 일정 변경으로 더 이상 이용할 수
+            없습니다. 다른 시간을 선택해주세요.
+          </p>
+          <button
+            type="button"
+            onClick={() => setRemovedWhileRanked([])}
+            className="shrink-0 text-xs text-destructive underline"
+          >
+            닫기
+          </button>
+        </div>
+      )}
 
       {ctx.slots.length === 0 && (
         <p className="text-sm text-destructive">
@@ -168,20 +264,47 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       )}
 
       {isCandidate ? (
-        <div className="flex flex-wrap gap-2">
-          {ctx.slots.map((slot) => (
-            <button
-              key={slot.key}
-              type="button"
-              onClick={() => selectCandidateSlot(slot.key)}
-              className={`rounded-full border px-3 py-1 font-mono text-xs ${
-                selected.includes(slot.key)
-                  ? "border-primary bg-primary/10 text-primary"
-                  : "border-border text-muted-foreground"
-              }`}
-            >
-              {slot.label}
-            </button>
+        <div className="flex flex-col gap-4">
+          {dayGroups.map((group) => (
+            <div key={group.dayKey} className="flex flex-col gap-1.5">
+              <p className="text-sm font-semibold">{group.dayLabel}</p>
+              <div className="flex flex-wrap gap-2">
+                {group.slots.map((slot) => {
+                  const rankIndex = selected.indexOf(slot.key);
+                  const isRemoved = justRemovedKeys.has(slot.key) && !ctx.slots.some((s) => s.key === slot.key);
+                  const time = slot.label.split(") ")[1] ?? slot.label;
+
+                  if (isRemoved) {
+                    return (
+                      <span
+                        key={slot.key}
+                        title="일정 변경으로 선택할 수 없습니다"
+                        className="rounded-full border border-border px-3 py-1 font-mono text-xs text-muted-foreground line-through"
+                      >
+                        ✕ {time}
+                      </span>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={slot.key}
+                      type="button"
+                      onClick={() => toggleCandidateRank(slot.key)}
+                      disabled={rankIndex === -1 && selected.length >= MAX_RANKS}
+                      className={`rounded-full border px-3 py-1 font-mono text-xs disabled:cursor-not-allowed disabled:opacity-40 ${
+                        rankIndex !== -1
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground"
+                      }`}
+                    >
+                      {rankIndex !== -1 ? `${RANK_MEDAL[rankIndex]} ` : ""}
+                      {time}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           ))}
         </div>
       ) : (
@@ -196,7 +319,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button onClick={submit} disabled={submitting || (isCandidate && selected.length === 0)}>
-        {submitting ? "처리 중..." : isCandidate ? "확정하기" : "제출하기"}
+        {submitting ? "처리 중..." : isCandidate ? `선택한 ${selected.length}개 제출하기` : "제출하기"}
       </Button>
 
       {isCandidate ? (

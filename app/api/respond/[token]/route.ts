@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { matchAndPersist } from "@/lib/applyMatch";
 import { generateUpcomingSlots, formatSlotLabel } from "@/lib/slots";
 import { sendCandidateInvite } from "@/lib/sendCandidateInvite";
-import { sendConfirmationEmail } from "@/lib/sendConfirmationEmail";
 import { recommendLeastConflictSlots, requiresRoom } from "@/lib/matching";
 import { requestMoreAvailability, MAX_AVAILABILITY_ROUNDS } from "@/lib/requestMoreAvailability";
 
@@ -102,8 +100,9 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { token } = await params;
-  const { selectedSlots, allUnavailable } = (await request.json()) as {
+  const { selectedSlots, preferredSlots, allUnavailable } = (await request.json()) as {
     selectedSlots?: string[];
+    preferredSlots?: string[];
     allUnavailable?: boolean;
   };
 
@@ -142,26 +141,13 @@ export async function POST(request: Request, { params }: Params) {
       }
     }
   } else if (reqRow.kind === "candidate") {
-    const { data: interview } = await supabase
+    // 후보자는 1~3순위를 제출할 뿐, 여기서 곧바로 매칭·확정하지 않는다. 제출과 확정
+    // 사이에 면접관 일정이 바뀔 위험을 줄이기 위해, 리크루터가 순위 중 하나를 최종
+    // 확정하는 단계를 둔다(app/api/interviews/[id]/confirm-priority).
+    await supabase
       .from("interviews")
-      .select("panel, interview_type")
-      .eq("id", reqRow.interview_id)
-      .single();
-    const matched = await matchAndPersist(
-      supabase,
-      reqRow.interview_id,
-      selectedSlots ?? [],
-      interview!.panel,
-      interview!.interview_type,
-    );
-    await supabase.from("interviews").update({ stage: "candidate_done" }).eq("id", reqRow.interview_id);
-
-    // 확정되면 리크루터가 따로 "확정 메일 발송"을 누르지 않아도 곧바로 전원에게
-    // 안내한다 — "확정됐습니다, 문제 있으면 알려주세요" 정도의 가벼운 알림으로,
-    // 전체를 다시 왕복시키는 면접관 재확인 절차 없이도 변경 여지를 열어둔다.
-    if (matched?.status === "confirmed") {
-      await sendConfirmationEmail(supabase, matched);
-    }
+      .update({ preferred_slots: preferredSlots ?? selectedSlots ?? [], stage: "candidate_done" })
+      .eq("id", reqRow.interview_id);
   } else {
     await supabase
       .from("interviewers")

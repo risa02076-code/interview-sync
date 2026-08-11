@@ -39,6 +39,7 @@ function toCsv(rows: InterviewRow[]) {
 const IN_PROGRESS_STATUSES: DisplayStatus[] = [
   "awaiting_interviewer",
   "awaiting_candidate",
+  "awaiting_recruiter_pick",
   "needs_reschedule",
   "coordinated",
 ];

@@ -1,6 +1,7 @@
 export type DisplayStatus =
   | "awaiting_interviewer"
   | "awaiting_candidate"
+  | "awaiting_recruiter_pick"
   | "needs_reschedule"
   | "coordinated"
   | "confirmed"
@@ -23,6 +24,8 @@ export function deriveDisplayStatus(iv: InterviewLike): DisplayStatus {
 
   if (iv.status === "pending") {
     if (iv.stage === "created" || iv.stage === "interviewer_pending") return "awaiting_interviewer";
+    // 후보자가 1~3순위를 제출했지만 아직 리크루터가 그중 하나를 최종 확정하지 않은 상태
+    if (iv.stage === "candidate_done") return "awaiting_recruiter_pick";
     return "awaiting_candidate"; // interviewer_done(발송 직전) 또는 candidate_pending
   }
 
@@ -45,6 +48,11 @@ export const STATUS_META: Record<
     label: "후보자 응답 대기",
     emoji: "🟡",
     badgeClass: "bg-amber-100 text-amber-800 border-amber-300",
+  },
+  awaiting_recruiter_pick: {
+    label: "리크루터 확정 필요",
+    emoji: "🟣",
+    badgeClass: "bg-purple-100 text-purple-800 border-purple-300",
   },
   needs_reschedule: {
     label: "재조율 필요",

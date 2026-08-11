@@ -39,6 +39,8 @@ type InterviewDetail = {
   note: string | null;
 };
 
+const RANK_MEDAL = ["🥇", "🥈", "🥉"];
+
 const STAGE_LABEL: Record<Stage, string> = {
   created: "등록됨 — 면접관 문의 전",
   interviewer_pending: "면접관 응답 대기 중",
@@ -175,6 +177,23 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
+  async function handleConfirmPriority(slot: string) {
+    setBusy(true);
+    const res = await fetch(`/api/interviews/${id}/confirm-priority`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      setToast("선택하신 시간으로 확정하고 확정 메일을 발송했습니다.");
+      load();
+    } else {
+      const body = await res.json();
+      setToast(body.error ?? "확정에 실패했습니다.");
+    }
+  }
+
   async function handleDelete() {
     if (!confirm("이 면접 케이스를 삭제할까요?")) return;
     const res = await fetch(`/api/interviews/${id}`, { method: "DELETE" });
@@ -238,11 +257,33 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
           <span className="font-semibold">확정 일정: </span>
           {formatSlotLabel(interview.matched_slot!)} · {interview.roomName ?? interview.interview_type}
         </p>
-      ) : (
+      ) : displayStatus !== "awaiting_recruiter_pick" ? (
         <p className="text-sm text-muted-foreground">
           희망 시간대:{" "}
           {interview.preferred_slots.map((s) => formatSlotLabel(s)).join(", ") || "미입력"}
         </p>
+      ) : null}
+
+      {displayStatus === "awaiting_recruiter_pick" && (
+        <div className="flex flex-col gap-2 rounded-md border p-3">
+          <p className="text-sm font-semibold">후보자가 제출한 우선순위</p>
+          <p className="text-xs text-muted-foreground">
+            제출 이후 면접관 일정이 바뀌었을 수 있어, 확정을 누르면 그 자리에서 다시 확인합니다. 이미
+            지나간 시간이면 다른 순위를 눌러주세요.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {interview.preferred_slots.map((slot, i) => (
+              <div key={slot} className="flex items-center justify-between rounded-md border px-3 py-2">
+                <span className="text-sm">
+                  {RANK_MEDAL[i] ?? `${i + 1}순위`} {formatSlotLabel(slot)}
+                </span>
+                <Button size="sm" disabled={busy} onClick={() => handleConfirmPriority(slot)}>
+                  이 시간으로 확정
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {interview.note && <p className="text-sm text-destructive">{interview.note}</p>}
