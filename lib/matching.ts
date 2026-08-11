@@ -79,8 +79,9 @@ export function recommendLeastConflictSlots(
   panelInterviewers: Interviewer[],
   rooms: Room[],
   roomRequired: boolean,
+  businessDays: number = 5,
 ): SlotRecommendation[] {
-  const scored = generateUpcomingSlots().map((s) => {
+  const scored = generateUpcomingSlots(businessDays).map((s) => {
     const conflicts = panelInterviewers.filter((p) => p.busy_slots.includes(s.key)).map((p) => p.name);
     const roomBlocked = roomRequired && !rooms.some((r) => !r.busy_slots.includes(s.key));
     return { slot: s.key, conflicts, score: conflicts.length + (roomBlocked ? 1 : 0) };

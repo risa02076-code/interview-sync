@@ -12,6 +12,8 @@ type Context = {
   name: string;
   subtitle: string;
   slots: Slot[];
+  preSelected?: string[];
+  othersBusy?: string[];
 };
 
 export default function RespondPage({ params }: { params: Promise<{ token: string }> }) {
@@ -33,6 +35,10 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
         // 제안된 시간이 하나뿐이면 굳이 클릭하게 하지 않고 미리 선택해둔다.
         if (data.kind === "candidate" && data.slots.length === 1) {
           setSelected([data.slots[0].key]);
+        }
+        // 재문의 라운드에서는 이전에 자신이 표시했던 불가능한 시간을 그대로 이어서 보여준다.
+        if (data.kind === "interviewer" && data.preSelected?.length) {
+          setSelected(data.preSelected);
         }
       })
       .catch((e) => setError(e.message));
@@ -113,6 +119,13 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
         </p>
       )}
 
+      {!isCandidate && !!ctx.othersBusy?.length && (
+        <p className="text-xs text-muted-foreground">
+          <span className="inline-block h-3 w-3 rounded-sm border border-amber-300 bg-amber-100 align-middle" />{" "}
+          주황색 칸은 이미 응답한 다른 면접관이 불가능하다고 표시한 시간입니다(참고용).
+        </p>
+      )}
+
       {isCandidate ? (
         <div className="flex flex-wrap gap-2">
           {ctx.slots.map((slot) => (
@@ -131,7 +144,12 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
           ))}
         </div>
       ) : (
-        <SlotGrid slots={ctx.slots} selected={selectedSet} onPaint={paintInterviewerSlot} />
+        <SlotGrid
+          slots={ctx.slots}
+          selected={selectedSet}
+          onPaint={paintInterviewerSlot}
+          cellInfo={(key) => ({ key, warn: ctx.othersBusy?.includes(key) })}
+        />
       )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}

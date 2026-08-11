@@ -85,6 +85,21 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     return map;
   }, [interview, allSlots, needsRoom]);
 
+  /**
+   * 클릭한 슬롯 하나에 대해 "면접관별 가능 여부"와 "회의실 가능 여부"를 따로 보여주기
+   * 위한 상세 정보. 히트맵 색(총 충돌 수)만으로는 사람 문제인지 회의실 문제인지
+   * 구분이 안 돼서, 자동 매칭이 왜 그 시간을 걸렀는지(또는 골랐는지) 설명하는 용도로도 쓴다.
+   */
+  function slotDetail(slot: string) {
+    if (!interview) return null;
+    const people = interview.panelDetail.map((p) => ({
+      name: p.name,
+      free: !p.busy_slots.includes(slot),
+    }));
+    const freeRoom = interview.rooms.find((r) => !r.busy_slots.includes(slot));
+    return { people, needsRoom, freeRoomName: freeRoom?.name ?? null };
+  }
+
   async function handleManualConfirm() {
     if (!manualSlot) return;
     setBusy(true);
@@ -275,8 +290,10 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
       {manualOpen && (
         <div className="flex flex-col gap-2 rounded-md border p-3">
           <p className="text-xs text-muted-foreground">
-            자동 매칭이 안 되거나(전원 공통 시간 없음) 그냥 직접 정하고 싶을 때, 아래 히트맵에서
-            시간을 골라 확정합니다. 색이 진할수록 겹치는 면접관(또는 회의실 부족)이 많다는 뜻입니다.
+            자동 매칭이 안 되거나(전원 공통 시간 없음) 그냥 직접 정하고 싶을 때 씁니다. 색이
+            진할수록 겹치는 면접관(또는 회의실 부족)이 많다는 뜻이고, 시간을 클릭하면 자동
+            매칭이 그 시간을 왜 골랐는지/걸렀는지(누가 가능한지, 회의실이 있는지)를 그대로
+            보여줍니다. 그대로 확정하고 싶으면 아래 버튼을 누르면 됩니다.
           </p>
           <SlotGrid
             slots={allSlots}
@@ -287,10 +304,33 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
             cellInfo={(key) => ({ key, conflictCount: conflictBySlot.get(key) ?? 0 })}
           />
           {manualSlot && (
-            <p className="text-xs">
-              선택한 시간: <span className="font-mono">{formatSlotLabel(manualSlot)}</span> · 충돌{" "}
-              {conflictBySlot.get(manualSlot) ?? 0}건
-            </p>
+            <div className="flex flex-col gap-1.5 rounded-md bg-muted/50 p-2.5">
+              <p className="text-xs font-semibold">
+                선택한 시간: <span className="font-mono font-normal">{formatSlotLabel(manualSlot)}</span>
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {slotDetail(manualSlot)!.people.map((p) => (
+                  <Badge
+                    key={p.name}
+                    variant="outline"
+                    className={`font-normal ${p.free ? "" : "border-destructive/40 text-destructive"}`}
+                  >
+                    {p.name} {p.free ? "✔ 가능" : "✘ 불가능"}
+                  </Badge>
+                ))}
+              </div>
+              <p className="text-xs">
+                {needsRoom ? (
+                  slotDetail(manualSlot)!.freeRoomName ? (
+                    <>회의실: ✔ {slotDetail(manualSlot)!.freeRoomName} 배정 가능</>
+                  ) : (
+                    <span className="text-destructive">회의실: ✘ 전체 회의실 사용 중</span>
+                  )
+                ) : (
+                  "회의실: 필요 없음 (온라인/전화)"
+                )}
+              </p>
+            </div>
           )}
           <div className="flex justify-end">
             <Button size="sm" disabled={!manualSlot || busy} onClick={handleManualConfirm}>

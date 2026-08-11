@@ -9,6 +9,8 @@ type CellInfo = {
   /** 이 슬롯에 겹치는 인원 수 (히트맵용). 지정하지 않으면 색을 칠하지 않는다. */
   conflictCount?: number;
   disabled?: boolean;
+  /** 이미 응답을 마친 다른 사람이 이 시간을 불가능하다고 표시했음을 참고용으로 보여준다 */
+  warn?: boolean;
 };
 
 type SlotGridProps = {
@@ -128,12 +130,15 @@ export function SlotGrid({
                   panelSize && info?.conflictCount !== undefined
                     ? heatColor(info.conflictCount, panelSize)
                     : undefined;
+                const warnColor = !heat && info?.warn ? "rgba(245,158,11,0.16)" : undefined;
+                const tint = heat ?? warnColor;
+                const title = info?.disabled ? undefined : info?.warn ? `${t} · 다른 면접관 이미 불가능` : t;
 
                 return (
                   <td key={d} className="p-0.5">
                     <button
                       type="button"
-                      title={info?.disabled ? undefined : t}
+                      title={title}
                       disabled={info?.disabled}
                       onMouseDown={() => !info?.disabled && handleDown(key)}
                       onMouseEnter={() => !info?.disabled && handleEnter(key)}
@@ -142,9 +147,11 @@ export function SlotGrid({
                           ? "cursor-not-allowed border-border bg-muted"
                           : isSelected
                             ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border hover:border-primary/50"
+                            : warnColor
+                              ? "border-amber-300"
+                              : "border-border hover:border-primary/50"
                       }`}
-                      style={!isSelected && heat ? { backgroundColor: heat } : undefined}
+                      style={!isSelected && tint ? { backgroundColor: tint } : undefined}
                     />
                   </td>
                 );

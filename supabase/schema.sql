@@ -41,6 +41,9 @@ create table if not exists interviews (
   day_before_reminded_at timestamptz,
   -- 후보자에게 안내한(안내할) 충돌 최소 추천 시간들. 안내 시점에 고정해서 저장한다.
   recommended_slots text[] not null default '{}',
+  -- 면접관 전원 동시 가능 시간이 없어 조회 기간을 넓혀 재문의한 횟수(1부터 시작).
+  -- 상한(MAX_AVAILABILITY_ROUNDS) 넘으면 후보자 안내 없이 escalated로 리크루터에게 넘긴다.
+  availability_round int not null default 1,
   note text,
   created_at timestamptz not null default now()
 );
