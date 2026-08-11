@@ -37,6 +37,8 @@ create table if not exists interviews (
   -- stage: 'created' | 'interviewer_pending' | 'interviewer_done' | 'candidate_pending' | 'candidate_done'
   stage text not null default 'created',
   confirmation_sent_at timestamptz,
+  -- 면접 전날 리마인드 메일 발송 시각 (케이스당 1회만 발송)
+  day_before_reminded_at timestamptz,
   note text,
   created_at timestamptz not null default now()
 );
@@ -49,7 +51,10 @@ create table if not exists response_requests (
   interviewer_id uuid references interviewers(id) on delete cascade,
   status text not null default 'pending', -- 'pending' | 'submitted'
   created_at timestamptz not null default now(),
-  submitted_at timestamptz
+  submitted_at timestamptz,
+  -- 미응답 독촉 메일 발송 이력 (마지막 발송 시각 / 누적 횟수)
+  reminded_at timestamptz,
+  reminder_count int not null default 0
 );
 
 -- RLS 활성화, 정책은 만들지 않음 (API 라우트가 서비스 롤 키로만 접근 — 브라우저 직접 접근 차단)

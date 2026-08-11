@@ -27,6 +27,8 @@
 | 8 | 조율 대시보드 | 전체 면접 케이스를 표로 한눈에 확인(후보자·직무·패널·진행단계·매칭결과), CSV로 내보낸다 |
 | 9 | 면접관 관리 | 면접관별 이메일 등록, 현재 불가능 시간 확인, 개별 문의 메일 재발송 |
 | 10 | 케이스 삭제 | 취소된 면접 건을 목록에서 제거한다 |
+| 11 | 미응답 자동 독촉 | 요청 후 2일이 지나도록 응답이 없는 면접관·후보자에게 독촉 메일을 2일 간격·최대 3회 자동 재발송한다 |
+| 12 | 면접 전날 알림 | 내일 면접인 확정 케이스의 후보자·면접관 전원에게 일정·장소를 1회 안내한다 |
 
 ## 4. 화면 구성
 
@@ -71,6 +73,7 @@ interviews (면접 케이스)
   status             text       -- 'confirmed' | 'escalated' | 'pending' | 'rescheduled'
   stage              text       -- 진행 단계 (5번 참고)
   note               text, null
+  day_before_reminded_at timestamptz, null  -- 전날 알림 발송 시각 (케이스당 1회)
   created_at         timestamptz, default now()
 
 response_requests (이메일 응답 요청 — 토큰 기반)
@@ -82,6 +85,8 @@ response_requests (이메일 응답 요청 — 토큰 기반)
   status            text          -- 'pending' | 'submitted'
   created_at        timestamptz
   submitted_at      timestamptz, null
+  reminded_at       timestamptz, null  -- 마지막 독촉 메일 발송 시각
+  reminder_count    int, default 0     -- 누적 독촉 횟수 (상한 3회)
 ```
 
 슬롯은 고정된 날짜 목록이 아니라, 요청 시점 기준 "다음 영업일(주말 제외) 5일 × 하루 2타임"을 매번 계산해 ISO 날짜시각 문자열로 표현한다 (`lib/slots.ts`의 `generateUpcomingSlots`). `interviewers.busy_slots` / `rooms.busy_slots` / `interviews.preferred_slots` / `matched_slot` 은 모두 이 문자열 값을 공유한다.
