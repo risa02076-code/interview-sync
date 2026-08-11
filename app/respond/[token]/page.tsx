@@ -23,6 +23,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [doneReason, setDoneReason] = useState<"confirmed" | "requested-more" | null>(null);
 
   useEffect(() => {
     fetch(`/api/respond/${token}`)
@@ -73,6 +74,24 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       setError((await res.json()).error ?? "제출에 실패했습니다.");
       return;
     }
+    setDoneReason("confirmed");
+    setDone(true);
+  }
+
+  async function submitAllUnavailable() {
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch(`/api/respond/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ allUnavailable: true }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError((await res.json()).error ?? "제출에 실패했습니다.");
+      return;
+    }
+    setDoneReason("requested-more");
     setDone(true);
   }
 
@@ -87,7 +106,9 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       <div className="mx-auto max-w-md p-6">
         <p className="text-lg font-semibold">제출이 완료되었습니다.</p>
         <p className="mt-2 text-sm text-muted-foreground">
-          응답해주셔서 감사합니다. 창을 닫으셔도 됩니다.
+          {doneReason === "requested-more"
+            ? "다른 시간대를 다시 확인해 새로운 일정을 안내드리겠습니다. 창을 닫으셔도 됩니다."
+            : "응답해주셔서 감사합니다. 창을 닫으셔도 됩니다."}
         </p>
       </div>
     );
@@ -157,6 +178,12 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       <Button onClick={submit} disabled={submitting || (isCandidate && selected.length === 0)}>
         {submitting ? "처리 중..." : isCandidate ? "확정하기" : "제출하기"}
       </Button>
+
+      {isCandidate && (
+        <Button variant="ghost" onClick={submitAllUnavailable} disabled={submitting} className="text-muted-foreground">
+          이 시간들 다 안 돼요 — 다른 시간대도 확인해주세요
+        </Button>
+      )}
     </div>
   );
 }

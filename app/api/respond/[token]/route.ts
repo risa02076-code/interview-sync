@@ -90,7 +90,10 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { token } = await params;
-  const { selectedSlots } = (await request.json()) as { selectedSlots: string[] };
+  const { selectedSlots, allUnavailable } = (await request.json()) as {
+    selectedSlots?: string[];
+    allUnavailable?: boolean;
+  };
 
   const supabase = createAdminClient();
   const { data: reqRow, error } = await supabase
@@ -103,7 +106,30 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "이미 제출된 응답입니다." }, { status: 400 });
   }
 
-  if (reqRow.kind === "candidate") {
+  if (reqRow.kind === "candidate" && allUnavailable) {
+    // 제안된 시간이 전부 안 맞는다는 응답 — 매칭을 시도하지 않고, 조회 기간을 넓혀
+    // 면접관 전원에게 다시 문의한다(면접관 쪽 재문의 로직을 그대로 재사용).
+    const { data: interview } = await supabase
+      .from("interviews")
+      .select("*")
+      .eq("id", reqRow.interview_id)
+      .single();
+    if (interview) {
+      const origin = new URL(request.url).origin;
+      if (interview.availability_round < MAX_AVAILABILITY_ROUNDS) {
+        await requestMoreAvailability(supabase, interview, origin, interview.availability_round + 1);
+      } else {
+        await supabase
+          .from("interviews")
+          .update({
+            status: "escalated",
+            stage: "interviewer_done",
+            note: `후보자가 제안된 시간을 모두 거절함 — 조회 기간을 ${MAX_AVAILABILITY_ROUNDS}차까지 넓혀도 대안을 찾지 못함, 리크루터 확인 필요`,
+          })
+          .eq("id", interview.id);
+      }
+    }
+  } else if (reqRow.kind === "candidate") {
     const { data: interview } = await supabase
       .from("interviews")
       .select("panel, interview_type")
@@ -112,7 +138,7 @@ export async function POST(request: Request, { params }: Params) {
     await matchAndPersist(
       supabase,
       reqRow.interview_id,
-      selectedSlots,
+      selectedSlots ?? [],
       interview!.panel,
       interview!.interview_type,
     );
@@ -120,7 +146,7 @@ export async function POST(request: Request, { params }: Params) {
   } else {
     await supabase
       .from("interviewers")
-      .update({ busy_slots: selectedSlots })
+      .update({ busy_slots: selectedSlots ?? [] })
       .eq("id", reqRow.interviewer_id);
   }
 
