@@ -22,16 +22,27 @@ export async function GET(_request: Request, { params }: Params) {
   if (reqRow.kind === "candidate") {
     const { data: interview } = await supabase
       .from("interviews")
-      .select("candidate_name, position, recommended_slots")
+      .select("candidate_name, position, panel, interview_type, availability_round")
       .eq("id", reqRow.interview_id)
       .single();
 
-    // 발송 시점에 고정해둔 추천 시간들만 보여준다 — 재조회 시점의 면접관 가용
-    // 시간으로 다시 계산하면 이메일로 안내한 시간과 달라질 수 있기 때문이다.
-    const slots = ((interview?.recommended_slots as string[] | null) ?? []).map((key) => ({
-      key,
-      label: formatSlotLabel(key),
-    }));
+    // 이메일 발송 시점에 고정해둔 값을 보여주지 않고, 후보자가 응답을 미루는 동안 면접관
+    // 일정이 바뀔 수 있으므로 지금 이 순간 기준으로 다시 계산한다. 후보자에게는 절대
+    // 충돌 있는 시간을 보여주지 않으므로, 완전히 겹치지 않는 시간만 남긴다.
+    let slots: { key: string; label: string }[] = [];
+    if (interview) {
+      const { data: panelInterviewers } = await supabase
+        .from("interviewers")
+        .select("*")
+        .in("id", interview.panel);
+      const needsRoom = requiresRoom(interview.interview_type);
+      const { data: rooms } = needsRoom ? await supabase.from("rooms").select("*") : { data: [] };
+      const businessDays = interview.availability_round * 5;
+
+      slots = recommendLeastConflictSlots(panelInterviewers ?? [], rooms ?? [], needsRoom, businessDays)
+        .filter((r) => r.conflicts.length === 0)
+        .map((r) => ({ key: r.slot, label: formatSlotLabel(r.slot) }));
+    }
 
     return NextResponse.json({
       kind: "candidate",
