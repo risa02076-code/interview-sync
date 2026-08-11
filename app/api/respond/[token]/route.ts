@@ -113,7 +113,9 @@ export async function POST(request: Request, { params }: Params) {
     .eq("token", token)
     .single();
   if (error) return NextResponse.json({ error: "유효하지 않은 링크입니다." }, { status: 404 });
-  if (reqRow.status === "submitted") {
+  // 면접관 링크는 1회용으로 막지 않는다 — 나중에 일정이 더 생기면 같은 링크에서
+  // 언제든 다시 고쳐 제출할 수 있어야 한다. 후보자 응답은 여전히 1회로 제한한다.
+  if (reqRow.status === "submitted" && reqRow.kind !== "interviewer") {
     return NextResponse.json({ error: "이미 제출된 응답입니다." }, { status: 400 });
   }
 
@@ -191,7 +193,11 @@ export async function POST(request: Request, { params }: Params) {
         .eq("id", reqRow.interview_id)
         .single();
 
-      if (interview) {
+      // 면접관 링크를 재사용할 수 있게 되면서, 이미 후보자에게 안내가 나갔거나 후보자가
+      // 순위를 제출한 뒤에도 면접관이 캘린더를 다시 고쳐 제출할 수 있다. 그 경우 busy_slots는
+      // 갱신하되, 이미 지난 단계(candidate_pending/candidate_done 등)를 되돌리거나 후보자에게
+      // 또 초대 메일을 보내지는 않는다 — 딱 면접관 응답을 다 모으는 단계에서만 다음으로 넘어간다.
+      if (interview && interview.stage === "interviewer_pending") {
         const { data: panelInterviewers } = await supabase
           .from("interviewers")
           .select("*")

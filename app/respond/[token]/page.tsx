@@ -147,7 +147,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       setError((await res.json()).error ?? "제출에 실패했습니다.");
       return;
     }
-    setDoneReason(isCandidate ? "priorities-submitted" : "confirmed");
+    if (isCandidate) setDoneReason("priorities-submitted");
     setDone(true);
   }
 
@@ -194,7 +194,12 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   if (!ctx) {
     return <p className="mx-auto max-w-md p-6 text-sm text-muted-foreground">불러오는 중...</p>;
   }
-  if (ctx.status === "submitted" || done) {
+  const isCandidate = ctx.kind === "candidate";
+
+  // 후보자 응답은 한 번 제출하면 끝나는 화면으로 마무리한다. 면접관 응답은 링크를
+  // 계속 재사용할 수 있어야 하므로(나중에 일정이 더 생기면 같은 링크에서 다시 고쳐
+  // 제출), 여기서 화면을 완전히 끝내지 않고 아래에서 배너만 보여준다.
+  if (isCandidate && (ctx.status === "submitted" || done)) {
     return (
       <div className="mx-auto max-w-md p-6">
         <p className="text-lg font-semibold">
@@ -210,8 +215,6 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       </div>
     );
   }
-
-  const isCandidate = ctx.kind === "candidate";
   const justRemovedKeys = new Set(justRemoved.map((s) => s.key));
   // 방금 사라진 시간도 한 번은 취소선으로 보여줘야 하니, 최신 목록에 합쳐서 그룹핑한다.
   const displaySlots = isCandidate
@@ -234,6 +237,12 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
           ? "아래 일정은 면접관의 최신 가능 시간을 반영하고 있습니다. 편한 순서대로 최대 3개까지 선택해주세요(클릭한 순서가 우선순위가 됩니다)."
           : "30분 단위 표에서 불가능한(면접이 어려운) 시간대를 모두 클릭하거나 드래그해서 선택해주세요."}
       </p>
+
+      {!isCandidate && (ctx.status === "submitted" || done) && (
+        <p className="rounded-md bg-primary/10 p-2.5 text-sm text-primary">
+          이미 제출하셨습니다. 이후에 일정이 더 생기면 이 링크에서 언제든 다시 고쳐 제출하실 수 있습니다.
+        </p>
+      )}
 
       {removedWhileRanked.length > 0 && (
         <div className="flex items-start justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
@@ -321,7 +330,13 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button onClick={submit} disabled={submitting || (isCandidate && selected.length === 0)}>
-        {submitting ? "처리 중..." : isCandidate ? "희망 일정 제출" : "제출하기"}
+        {submitting
+          ? "처리 중..."
+          : isCandidate
+            ? "희망 일정 제출"
+            : ctx.status === "submitted" || done
+              ? "다시 제출하기"
+              : "제출하기"}
       </Button>
 
       {isCandidate ? (
