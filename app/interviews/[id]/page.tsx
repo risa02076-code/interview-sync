@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect, useState, useCallback, use } from "react";
+import { useEffect, useState, useCallback, useMemo, use } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatSlotLabel } from "@/lib/slots";
 import { deriveDisplayStatus, dDayLabel, STATUS_META } from "@/lib/status";
+import { requiresRoom } from "@/lib/matching";
+import { SlotGrid, type GridSlot } from "@/components/slot-grid";
 
-type InterviewerDetail = { id: string; name: string; role: string; responded: boolean };
+type InterviewerDetail = {
+  id: string;
+  name: string;
+  role: string;
+  responded: boolean;
+  busy_slots: string[];
+};
+type RoomDetail = { id: string; name: string; busy_slots: string[] };
 
 type Stage = "created" | "interviewer_pending" | "interviewer_done" | "candidate_pending" | "candidate_done";
 
@@ -19,6 +28,7 @@ type InterviewDetail = {
   position: string;
   interview_type: string;
   panelDetail: InterviewerDetail[];
+  rooms: RoomDetail[];
   preferred_slots: string[];
   matched_slot: string | null;
   roomName: string | null;
@@ -45,6 +55,10 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
   const [inviting, setInviting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  const [allSlots, setAllSlots] = useState<GridSlot[]>([]);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualSlot, setManualSlot] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     const res = await fetch(`/api/interviews/${id}`);
     if (res.ok) setInterview(await res.json());
@@ -52,7 +66,44 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
 
   useEffect(() => {
     load();
+    fetch("/api/slots")
+      .then((res) => res.json())
+      .then(setAllSlots);
   }, [load]);
+
+  const needsRoom = interview ? requiresRoom(interview.interview_type) : false;
+
+  /** 히트맵 색을 위해, 각 슬롯에 걸리는 "충돌 인원 수"를 미리 계산해둔다(면접관 겹침 + 회의실 부족). */
+  const conflictBySlot = useMemo(() => {
+    if (!interview) return new Map<string, number>();
+    const map = new Map<string, number>();
+    for (const slot of allSlots) {
+      const busyPanel = interview.panelDetail.filter((p) => p.busy_slots.includes(slot.key)).length;
+      const roomBlocked = needsRoom && !interview.rooms.some((r) => !r.busy_slots.includes(slot.key));
+      map.set(slot.key, busyPanel + (roomBlocked ? 1 : 0));
+    }
+    return map;
+  }, [interview, allSlots, needsRoom]);
+
+  async function handleManualConfirm() {
+    if (!manualSlot) return;
+    setBusy(true);
+    const res = await fetch(`/api/interviews/${id}/manual-confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slot: manualSlot }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      setToast("직접 선택한 시간으로 확정했습니다.");
+      setManualOpen(false);
+      setManualSlot(null);
+      load();
+    } else {
+      const body = await res.json();
+      setToast(body.error ?? "확정에 실패했습니다.");
+    }
+  }
 
   async function handleInviteInterviewers() {
     setInviting(true);
@@ -213,10 +264,41 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
             후보자 응답 대기 중
           </Button>
         )}
+        <Button variant="outline" onClick={() => setManualOpen((v) => !v)}>
+          {manualOpen ? "직접 확정 닫기" : "직접 시간 확정"}
+        </Button>
         <Button onClick={handleDelete} variant="ghost">
           삭제
         </Button>
       </div>
+
+      {manualOpen && (
+        <div className="flex flex-col gap-2 rounded-md border p-3">
+          <p className="text-xs text-muted-foreground">
+            자동 매칭이 안 되거나(전원 공통 시간 없음) 그냥 직접 정하고 싶을 때, 아래 히트맵에서
+            시간을 골라 확정합니다. 색이 진할수록 겹치는 면접관(또는 회의실 부족)이 많다는 뜻입니다.
+          </p>
+          <SlotGrid
+            slots={allSlots}
+            selected={manualSlot ? new Set([manualSlot]) : new Set()}
+            onPaint={(key) => setManualSlot(key)}
+            allowDrag={false}
+            panelSize={interview.panelDetail.length + (needsRoom ? 1 : 0)}
+            cellInfo={(key) => ({ key, conflictCount: conflictBySlot.get(key) ?? 0 })}
+          />
+          {manualSlot && (
+            <p className="text-xs">
+              선택한 시간: <span className="font-mono">{formatSlotLabel(manualSlot)}</span> · 충돌{" "}
+              {conflictBySlot.get(manualSlot) ?? 0}건
+            </p>
+          )}
+          <div className="flex justify-end">
+            <Button size="sm" disabled={!manualSlot || busy} onClick={handleManualConfirm}>
+              {busy ? "확정 중..." : "이 시간으로 확정"}
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

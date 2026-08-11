@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateToken } from "@/lib/token";
 import { sendEmail } from "@/lib/email";
-import { generateUpcomingSlots } from "@/lib/slots";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -37,9 +36,8 @@ export async function POST(request: Request, { params }: Params) {
     `[인터뷰싱크] 면접 불가능한 시간을 알려주세요`,
     `
       <p>안녕하세요, ${interviewer.name}님.</p>
-      <p>아래 시간대 중 면접이 <b>불가능한</b> 시간을 모두 선택해주세요.</p>
+      <p>아래 링크의 30분 단위 캘린더에서 면접이 <b>불가능한</b> 시간을 모두 선택해주세요.</p>
       <p><a href="${link}">${link}</a></p>
-      <p style="color:#888;font-size:12px">전체 시간대: ${generateUpcomingSlots().map((s) => s.label).join(", ")}</p>
     `,
   );
 

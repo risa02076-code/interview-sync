@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatSlotLabel } from "@/lib/slots";
+import { SlotGrid, type GridSlot } from "@/components/slot-grid";
 
 type InterviewerRow = {
   id: string;
@@ -21,6 +22,11 @@ export default function InterviewersPage() {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  const [allSlots, setAllSlots] = useState<GridSlot[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [calendarDraft, setCalendarDraft] = useState<Set<string>>(new Set());
+  const [savingCalendar, setSavingCalendar] = useState(false);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState("");
@@ -38,7 +44,37 @@ export default function InterviewersPage() {
 
   useEffect(() => {
     load();
+    fetch("/api/slots")
+      .then((res) => res.json())
+      .then(setAllSlots);
   }, []);
+
+  function openCalendarEditor(p: InterviewerRow) {
+    setEditingId((cur) => (cur === p.id ? null : p.id));
+    setCalendarDraft(new Set(p.busy_slots));
+  }
+
+  function paintCalendar(key: string, select: boolean) {
+    setCalendarDraft((cur) => {
+      const next = new Set(cur);
+      if (select) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
+  async function saveCalendar(id: string) {
+    setSavingCalendar(true);
+    await fetch(`/api/interviewers/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ busy_slots: Array.from(calendarDraft) }),
+    });
+    setSavingCalendar(false);
+    setEditingId(null);
+    setToast("불가능한 시간을 직접 수정했습니다.");
+    load();
+  }
 
   async function saveEmail(id: string) {
     setBusyId(id);
@@ -189,7 +225,25 @@ export default function InterviewersPage() {
                 <Button disabled={busyId === p.id || !p.email} onClick={() => sendInvite(p.id)}>
                   문의 메일 보내기
                 </Button>
+                <Button variant="outline" onClick={() => openCalendarEditor(p)}>
+                  {editingId === p.id ? "닫기" : "직접 캘린더 수정"}
+                </Button>
               </div>
+
+              {editingId === p.id && (
+                <div className="flex flex-col gap-2 rounded-md border p-3">
+                  <p className="text-xs text-muted-foreground">
+                    이메일 응답 없이 리크루터가 직접 불가능한 시간을 표시합니다. 30분 단위로
+                    클릭하거나 드래그해서 여러 칸을 한번에 선택할 수 있습니다.
+                  </p>
+                  <SlotGrid slots={allSlots} selected={calendarDraft} onPaint={paintCalendar} />
+                  <div className="flex justify-end">
+                    <Button size="sm" disabled={savingCalendar} onClick={() => saveCalendar(p.id)}>
+                      {savingCalendar ? "저장 중..." : "캘린더 저장"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         ))}

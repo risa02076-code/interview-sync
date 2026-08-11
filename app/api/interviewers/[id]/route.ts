@@ -5,12 +5,19 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
   const { id } = await params;
-  const { email } = (await request.json()) as { email: string };
+  const { email, busy_slots } = (await request.json()) as {
+    email?: string;
+    busy_slots?: string[];
+  };
+
+  const patch: Record<string, unknown> = {};
+  if (email !== undefined) patch.email = email;
+  if (busy_slots !== undefined) patch.busy_slots = busy_slots;
 
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("interviewers")
-    .update({ email })
+    .update(patch)
     .eq("id", id)
     .select()
     .single();

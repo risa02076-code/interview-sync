@@ -1,7 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { generateToken } from "./token";
 import { sendEmail } from "./email";
-import { generateUpcomingSlots } from "./slots";
 
 type Interview = { id: string; candidate_name: string; position: string; panel: string[] };
 
@@ -39,9 +38,9 @@ export async function sendInterviewerInvites(
       `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 면접 - 불가능한 시간을 알려주세요`,
       `
         <p>안녕하세요, ${interviewer.name}님.</p>
-        <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 관련해서, 아래 시간대 중 <b>불가능한</b> 시간을 모두 선택해주세요.</p>
+        <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 관련해서, 아래 링크의 30분 단위
+        캘린더에서 <b>불가능한</b> 시간을 모두 선택해주세요.</p>
         <p><a href="${link}">${link}</a></p>
-        <p style="color:#888;font-size:12px">전체 시간대: ${generateUpcomingSlots().map((s) => s.label).join(", ")}</p>
       `,
     );
   }

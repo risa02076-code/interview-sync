@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, useMemo, use } from "react";
 import { Button } from "@/components/ui/button";
+import { SlotGrid } from "@/components/slot-grid";
 
 type Slot = { key: string; label: string };
 
@@ -37,13 +38,20 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       .catch((e) => setError(e.message));
   }, [token]);
 
-  function toggle(key: string) {
-    if (ctx?.kind === "candidate") {
-      // 후보자는 추천받은 시간 중 하나만 고르는 것이므로 항상 단일 선택으로 교체한다.
-      setSelected([key]);
-      return;
-    }
-    setSelected((cur) => (cur.includes(key) ? cur.filter((s) => s !== key) : [...cur, key]));
+  const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  function selectCandidateSlot(key: string) {
+    // 후보자는 추천받은 시간 중 하나만 고르는 것이므로 항상 단일 선택으로 교체한다.
+    setSelected([key]);
+  }
+
+  function paintInterviewerSlot(key: string, select: boolean) {
+    setSelected((cur) => {
+      const set = new Set(cur);
+      if (select) set.add(key);
+      else set.delete(key);
+      return Array.from(set);
+    });
   }
 
   async function submit() {
@@ -82,7 +90,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   const isCandidate = ctx.kind === "candidate";
 
   return (
-    <div className="mx-auto flex max-w-md flex-col gap-5 p-6">
+    <div className={`mx-auto flex flex-col gap-5 p-6 ${isCandidate ? "max-w-md" : "max-w-3xl"}`}>
       <div>
         <h1 className="text-xl font-bold">
           {ctx.name}
@@ -96,7 +104,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
           ? ctx.slots.length > 1
             ? "아래 제안된 시간 중 편한 시간을 선택해 확정해주세요."
             : "아래 제안된 시간을 확인 후 확정해주세요."
-          : "불가능한(면접이 어려운) 시간대를 모두 선택해주세요."}
+          : "30분 단위 표에서 불가능한(면접이 어려운) 시간대를 모두 클릭하거나 드래그해서 선택해주세요."}
       </p>
 
       {ctx.slots.length === 0 && (
@@ -105,26 +113,30 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
         </p>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        {ctx.slots.map((slot) => (
-          <button
-            key={slot.key}
-            type="button"
-            onClick={() => toggle(slot.key)}
-            className={`rounded-full border px-3 py-1 font-mono text-xs ${
-              selected.includes(slot.key)
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border text-muted-foreground"
-            }`}
-          >
-            {slot.label}
-          </button>
-        ))}
-      </div>
+      {isCandidate ? (
+        <div className="flex flex-wrap gap-2">
+          {ctx.slots.map((slot) => (
+            <button
+              key={slot.key}
+              type="button"
+              onClick={() => selectCandidateSlot(slot.key)}
+              className={`rounded-full border px-3 py-1 font-mono text-xs ${
+                selected.includes(slot.key)
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground"
+              }`}
+            >
+              {slot.label}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <SlotGrid slots={ctx.slots} selected={selectedSet} onPaint={paintInterviewerSlot} />
+      )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <Button onClick={submit} disabled={submitting || selected.length === 0}>
+      <Button onClick={submit} disabled={submitting || (isCandidate && selected.length === 0)}>
         {submitting ? "처리 중..." : isCandidate ? "확정하기" : "제출하기"}
       </Button>
     </div>
