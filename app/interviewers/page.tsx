@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { formatSlotLabel } from "@/lib/slots";
 import { SlotGrid, type GridSlot } from "@/components/slot-grid";
 
 type InterviewerRow = {
@@ -17,6 +16,30 @@ type InterviewerRow = {
   busy_slots: string[];
 };
 
+const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
+
+/** 불가능 시간을 한 줄로 다 늘어놓지 않고 날짜별로 묶어서 보여주기 위함 */
+function groupBusySlotsByDay(busySlots: string[]) {
+  const order: string[] = [];
+  const labels = new Map<string, string>();
+  const times = new Map<string, string[]>();
+
+  for (const key of [...busySlots].sort()) {
+    const dt = new Date(key);
+    const dayKey = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+    if (!times.has(dayKey)) {
+      order.push(dayKey);
+      labels.set(dayKey, `${dt.getMonth() + 1}/${dt.getDate()}(${DAY_NAMES[dt.getDay()]})`);
+      times.set(dayKey, []);
+    }
+    const hh = String(dt.getHours()).padStart(2, "0");
+    const mm = String(dt.getMinutes()).padStart(2, "0");
+    times.get(dayKey)!.push(`${hh}:${mm}`);
+  }
+
+  return order.map((dayKey) => ({ dayLabel: labels.get(dayKey)!, times: times.get(dayKey)! }));
+}
+
 export default function InterviewersPage() {
   const [interviewers, setInterviewers] = useState<InterviewerRow[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -24,6 +47,7 @@ export default function InterviewersPage() {
   const [toast, setToast] = useState<string | null>(null);
 
   const [allSlots, setAllSlots] = useState<GridSlot[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [calendarDraft, setCalendarDraft] = useState<Set<string>>(new Set());
   const [savingCalendar, setSavingCalendar] = useState(false);
@@ -202,16 +226,31 @@ export default function InterviewersPage() {
                   {p.name} <span className="text-sm font-normal text-muted-foreground">· {p.role}</span>
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground">
-                현재 불가능 시간:{" "}
-                {p.busy_slots.length
-                  ? p.busy_slots
-                      .slice()
-                      .sort()
-                      .map((s) => formatSlotLabel(s))
-                      .join(", ")
-                  : "없음"}
-              </p>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>
+                  현재 불가능 시간: {p.busy_slots.length ? `${p.busy_slots.length}개` : "없음"}
+                </span>
+                {p.busy_slots.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId((cur) => (cur === p.id ? null : p.id))}
+                    className="text-primary underline"
+                  >
+                    {expandedId === p.id ? "숨기기" : "보기"}
+                  </button>
+                )}
+              </div>
+
+              {expandedId === p.id && (
+                <div className="flex flex-col gap-1 rounded-md bg-muted/50 p-2.5 text-xs">
+                  {groupBusySlotsByDay(p.busy_slots).map((group) => (
+                    <div key={group.dayLabel}>
+                      <span className="font-semibold">{group.dayLabel}</span>{" "}
+                      <span className="text-muted-foreground">{group.times.join(", ")}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex gap-2">
                 <Input
                   type="email"

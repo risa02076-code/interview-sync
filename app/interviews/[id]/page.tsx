@@ -215,9 +215,8 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
   const displayStatus = deriveDisplayStatus(interview);
   const meta = STATUS_META[displayStatus];
   const dday = dDayLabel(interview.matched_slot);
-  // 후보자가 순위를 제출한 뒤부터는(자동 확인이 진행 중이든 아니든) 리크루터가 언제든
-  // 직접 그중 하나를 눌러 먼저 확정할 수 있게 열어둔다.
-  const showPriorityPanel = interview.status === "pending" && interview.preferred_slots.length > 0;
+  // 후보자가 순위를 제출했으면(확정 여부와 무관하게) 누가 뭐라고 답했는지 항상 볼 수 있게 한다.
+  const hasPriorities = interview.preferred_slots.length > 0;
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 p-6">
@@ -267,32 +266,61 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
           <span className="font-semibold">확정 일정: </span>
           {formatSlotLabel(interview.matched_slot!)} · {interview.roomName ?? interview.interview_type}
         </p>
-      ) : !showPriorityPanel ? (
-        <p className="text-sm text-muted-foreground">
-          희망 시간대:{" "}
-          {interview.preferred_slots.map((s) => formatSlotLabel(s)).join(", ") || "미입력"}
-        </p>
+      ) : !hasPriorities ? (
+        <p className="text-sm text-muted-foreground">희망 시간대: 미입력</p>
       ) : null}
 
-      {showPriorityPanel && (
+      {hasPriorities && (
         <div className="flex flex-col gap-2 rounded-md border p-3">
-          <p className="text-sm font-semibold">후보자가 제출한 우선순위</p>
-          <p className="text-xs text-muted-foreground">
-            {displayStatus === "awaiting_priority_confirm"
-              ? "면접관 전원에게 이 시간들 참석 가능 여부를 확인 요청했습니다. 전원 가능한 가장 높은 순위로 자동 확정됩니다. 기다리지 않고 먼저 확정하고 싶으면 아래에서 직접 눌러도 됩니다(그 자리에서 다시 검증합니다)."
-              : "확정을 누르면 그 자리에서 지금도 비어있는지 다시 확인합니다. 이미 지나간 시간이면 다른 순위를 눌러주세요."}
-          </p>
-          <div className="flex flex-col gap-1.5">
-            {interview.preferred_slots.map((slot, i) => (
-              <div key={slot} className="flex items-center justify-between rounded-md border px-3 py-2">
-                <span className="text-sm">
-                  {RANK_MEDAL[i] ?? `${i + 1}순위`} {formatSlotLabel(slot)}
-                </span>
-                <Button size="sm" disabled={busy} onClick={() => handleConfirmPriority(slot)}>
-                  이 시간으로 확정
-                </Button>
-              </div>
-            ))}
+          <p className="text-sm font-semibold">후보자·면접관 응답 요약</p>
+          {interview.status === "pending" && (
+            <p className="text-xs text-muted-foreground">
+              {displayStatus === "awaiting_priority_confirm"
+                ? "면접관 전원에게 이 시간들 참석 가능 여부를 확인 요청했습니다. 전원 가능한 가장 높은 순위로 자동 확정됩니다. 기다리지 않고 먼저 확정하고 싶으면 아래에서 직접 눌러도 됩니다(그 자리에서 다시 검증합니다)."
+                : "면접관별로 각 순위에 참석 가능한지(현재 캘린더 기준) 보여줍니다. 확정을 누르면 그 자리에서 다시 검증합니다."}
+            </p>
+          )}
+          <div className="overflow-x-auto">
+            <table className="text-sm">
+              <thead>
+                <tr>
+                  <th className="pb-1 pr-3 text-left text-xs font-medium text-muted-foreground">후보자 제출 순위</th>
+                  {interview.panelDetail.map((p) => (
+                    <th key={p.id} className="px-2 pb-1 text-xs font-medium text-muted-foreground">
+                      {p.name}
+                    </th>
+                  ))}
+                  {interview.status === "pending" && <th className="pb-1" />}
+                </tr>
+              </thead>
+              <tbody>
+                {interview.preferred_slots.map((slot, i) => (
+                  <tr key={slot} className="border-t">
+                    <td className="whitespace-nowrap py-1.5 pr-3">
+                      {RANK_MEDAL[i] ?? `${i + 1}순위`} {formatSlotLabel(slot)}
+                    </td>
+                    {interview.panelDetail.map((p) => {
+                      const free = !p.busy_slots.includes(slot);
+                      return (
+                        <td
+                          key={p.id}
+                          className={`px-2 text-center ${free ? "text-primary" : "text-destructive"}`}
+                        >
+                          {free ? "✔" : "✘"}
+                        </td>
+                      );
+                    })}
+                    {interview.status === "pending" && (
+                      <td className="pl-2">
+                        <Button size="sm" disabled={busy} onClick={() => handleConfirmPriority(slot)}>
+                          이 시간으로 확정
+                        </Button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
