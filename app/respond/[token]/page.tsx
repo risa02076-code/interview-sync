@@ -29,7 +29,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       })
       .then((data: Context) => {
         setCtx(data);
-        // 후보자에게는 항상 제안된 시간 하나만 오므로, 굳이 클릭하게 하지 않고 미리 선택해둔다.
+        // 제안된 시간이 하나뿐이면 굳이 클릭하게 하지 않고 미리 선택해둔다.
         if (data.kind === "candidate" && data.slots.length === 1) {
           setSelected([data.slots[0].key]);
         }
@@ -38,6 +38,11 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   }, [token]);
 
   function toggle(key: string) {
+    if (ctx?.kind === "candidate") {
+      // 후보자는 추천받은 시간 중 하나만 고르는 것이므로 항상 단일 선택으로 교체한다.
+      setSelected([key]);
+      return;
+    }
     setSelected((cur) => (cur.includes(key) ? cur.filter((s) => s !== key) : [...cur, key]));
   }
 
@@ -88,7 +93,9 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
 
       <p className="text-sm">
         {isCandidate
-          ? "아래 제안된 시간을 확인 후 확정해주세요."
+          ? ctx.slots.length > 1
+            ? "아래 제안된 시간 중 편한 시간을 선택해 확정해주세요."
+            : "아래 제안된 시간을 확인 후 확정해주세요."
           : "불가능한(면접이 어려운) 시간대를 모두 선택해주세요."}
       </p>
 

@@ -39,8 +39,8 @@ create table if not exists interviews (
   confirmation_sent_at timestamptz,
   -- 면접 전날 리마인드 메일 발송 시각 (케이스당 1회만 발송)
   day_before_reminded_at timestamptz,
-  -- 후보자에게 안내한(안내할) 충돌 최소 추천 시간. 안내 시점에 고정해서 저장한다.
-  recommended_slot text,
+  -- 후보자에게 안내한(안내할) 충돌 최소 추천 시간들. 안내 시점에 고정해서 저장한다.
+  recommended_slots text[] not null default '{}',
   note text,
   created_at timestamptz not null default now()
 );

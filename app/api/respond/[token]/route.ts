@@ -20,15 +20,16 @@ export async function GET(_request: Request, { params }: Params) {
   if (reqRow.kind === "candidate") {
     const { data: interview } = await supabase
       .from("interviews")
-      .select("candidate_name, position, recommended_slot")
+      .select("candidate_name, position, recommended_slots")
       .eq("id", reqRow.interview_id)
       .single();
 
-    // 발송 시점에 고정해둔 추천 시간 하나만 보여준다 — 재조회 시점의 면접관 가용
+    // 발송 시점에 고정해둔 추천 시간들만 보여준다 — 재조회 시점의 면접관 가용
     // 시간으로 다시 계산하면 이메일로 안내한 시간과 달라질 수 있기 때문이다.
-    const slots = interview?.recommended_slot
-      ? [{ key: interview.recommended_slot, label: formatSlotLabel(interview.recommended_slot) }]
-      : [];
+    const slots = ((interview?.recommended_slots as string[] | null) ?? []).map((key) => ({
+      key,
+      label: formatSlotLabel(key),
+    }));
 
     return NextResponse.json({
       kind: "candidate",

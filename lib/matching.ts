@@ -65,29 +65,31 @@ export function findMatch(
 
 export type SlotRecommendation = { slot: string; conflicts: string[] };
 
+/** 후보자에게 한 번에 제안하는 추천 시간의 최대 개수 */
+const MAX_RECOMMENDATIONS = 3;
+
 /**
- * 패널 전원이 동시에 가능한 시간이 없을 수도 있다는 전제 아래, 전체 후보 슬롯 중
- * "충돌(면접관 불가능 + 회의실 없음)이 가장 적은" 시간을 하나 골라 추천한다.
- * 완전히 비어있는 슬롯이 있으면 그게 곧 충돌 0인 최선의 추천이 된다.
+ * 패널 전원이 동시에 가능한 시간이 없을 수도 있다는 전제 아래, 전체 후보 슬롯의
+ * "충돌(면접관 불가능 + 회의실 없음)" 점수를 모두 계산해 가장 낮은 점수와 동점인
+ * 시간들을 추천한다. 전원 동시 가능(충돌 0)한 시간이 여러 개면 그 여러 개를 그대로
+ * 반환하고, 하나도 없으면 그다음으로 충돌이 적은 시간들을 대안으로 반환한다.
+ * (많아도 MAX_RECOMMENDATIONS개까지만 — 후보자에게 선택지를 너무 많이 주지 않기 위함)
  */
-export function recommendLeastConflictSlot(
+export function recommendLeastConflictSlots(
   panelInterviewers: Interviewer[],
   rooms: Room[],
   roomRequired: boolean,
-): SlotRecommendation | null {
-  const candidates = generateUpcomingSlots().map((s) => s.key);
-  let best: (SlotRecommendation & { score: number }) | null = null;
+): SlotRecommendation[] {
+  const scored = generateUpcomingSlots().map((s) => {
+    const conflicts = panelInterviewers.filter((p) => p.busy_slots.includes(s.key)).map((p) => p.name);
+    const roomBlocked = roomRequired && !rooms.some((r) => !r.busy_slots.includes(s.key));
+    return { slot: s.key, conflicts, score: conflicts.length + (roomBlocked ? 1 : 0) };
+  });
+  if (!scored.length) return [];
 
-  for (const slot of candidates) {
-    const conflicts = panelInterviewers.filter((p) => p.busy_slots.includes(slot)).map((p) => p.name);
-    const roomBlocked = roomRequired && !rooms.some((r) => !r.busy_slots.includes(slot));
-    const score = conflicts.length + (roomBlocked ? 1 : 0);
-
-    if (!best || score < best.score) {
-      best = { slot, conflicts, score };
-      if (score === 0) break; // 충돌 0인 슬롯을 찾았으면 더 나은 대안은 없다
-    }
-  }
-
-  return best ? { slot: best.slot, conflicts: best.conflicts } : null;
+  const minScore = Math.min(...scored.map((s) => s.score));
+  return scored
+    .filter((s) => s.score === minScore)
+    .slice(0, MAX_RECOMMENDATIONS)
+    .map(({ slot, conflicts }) => ({ slot, conflicts }));
 }
