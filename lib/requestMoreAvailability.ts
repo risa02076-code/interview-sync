@@ -44,10 +44,11 @@ export async function requestMoreAvailability(
       `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 면접 - 조회 기간을 넓혀 다시 확인해주세요`,
       `
         <p>안녕하세요, ${interviewer.name}님.</p>
-        <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 관련해서, 지금까지 확인한 기간
-        안에는 패널 전원이 동시에 가능한 시간이 없었습니다. 기간을 <b>영업일 ${businessDays}일</b>로 넓혀서
-        다시 여쭤봅니다. 이전에 표시하신 시간은 아래 캘린더에 그대로 남아있으니, 새로 늘어난 기간만
-        추가로 확인해 <b>불가능한</b> 시간을 선택해주세요.</p>
+        <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 관련해서, 지금까지 확인한 기간 안에는
+        패널 전원이 동시에 가능한 시간이 없었습니다.</p>
+        <p>기간을 <b>영업일 ${businessDays}일</b>로 넓혀서 다시 여쭤봅니다.</p>
+        <p>이전에 표시하신 시간은 아래 캘린더에 그대로 남아있으니, 새로 늘어난 기간만 추가로 확인해
+        <b>불가능한</b> 시간을 선택해주세요.</p>
         <p><a href="${link}">${link}</a></p>
       `,
     );

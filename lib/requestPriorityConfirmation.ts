@@ -54,9 +54,9 @@ export async function requestPriorityConfirmation(
       `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 최종 면접 시간 확인 요청`,
       `
         <p>안녕하세요, ${interviewer.name}님.</p>
-        <p><b>${interview.candidate_name}</b>님(${interview.position})이 아래 순서로 면접 시간을 제안했습니다.
-        참석 가능한 시간을 모두 확인해주세요.</p>
+        <p><b>${interview.candidate_name}</b>님(${interview.position})이 아래 순서로 면접 시간을 제안했습니다.</p>
         <p>${list}</p>
+        <p>참석 가능한 시간을 모두 확인해주세요.</p>
         <p><a href="${link}">${link}</a></p>
       `,
     );

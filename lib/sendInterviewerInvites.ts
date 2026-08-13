@@ -38,8 +38,8 @@ export async function sendInterviewerInvites(
       `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 면접 - 불가능한 시간을 알려주세요`,
       `
         <p>안녕하세요, ${interviewer.name}님.</p>
-        <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 관련해서, 아래 링크의 30분 단위
-        캘린더에서 <b>불가능한</b> 시간을 모두 선택해주세요.</p>
+        <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 관련해서 연락드립니다.</p>
+        <p>아래 링크의 30분 단위 캘린더에서 <b>불가능한</b> 시간을 모두 선택해주세요.</p>
         <p><a href="${link}">${link}</a></p>
       `,
     );
