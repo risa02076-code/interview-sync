@@ -66,7 +66,18 @@ create table if not exists response_requests (
   reminder_count int not null default 0,
   -- kind='priority_confirm'일 때만 사용: 후보자가 제출한 1~3순위 중 이 면접관에게
   -- 참석 가능 여부를 물어본 시간들(발송 시점에 고정)
-  confirm_slots text[]
+  confirm_slots text[],
+  -- kind='priority_confirm'일 때만 사용: confirm_slots 중 실제로 참석 가능하다고 답한
+  -- 시간들. busy_slots는 그 뒤에도 계속 바뀔 수 있어서, "그때 무엇을 답했는지" 기록을
+  -- 따로 남겨둔다(리크루터가 나중에 확인할 수 있도록).
+  answered_slots text[],
+  -- kind='interviewer'일 때만 사용: 이 라운드에 실제로 제출한 "불가능한 시간" 스냅샷.
+  -- interviewers.busy_slots는 다음 라운드에 덮어써지므로, 각 라운드에 뭐라고
+  -- 답했었는지 히스토리를 보려면 이 스냅샷이 필요하다.
+  answered_busy_slots text[],
+  -- kind='candidate'일 때만 사용: 이때 실제로 제출한 1~3순위 스냅샷.
+  -- interviews.preferred_slots는 재조율 시 초기화되므로 마찬가지로 별도 보관.
+  answered_preferred_slots text[]
 );
 
 -- RLS 활성화, 정책은 만들지 않음 (API 라우트가 서비스 롤 키로만 접근 — 브라우저 직접 접근 차단)

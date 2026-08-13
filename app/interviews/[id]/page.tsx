@@ -9,15 +9,38 @@ import { formatSlotLabel } from "@/lib/slots";
 import { deriveDisplayStatus, dDayLabel, STATUS_META } from "@/lib/status";
 import { requiresRoom } from "@/lib/matching";
 import { SlotGrid, type GridSlot } from "@/components/slot-grid";
+import { groupBusySlotsByDay, formatRespondedAt } from "@/lib/busySlots";
 
+type PriorityConfirmRecord = {
+  interviewer_id: string | null;
+  status: string;
+  submitted_at: string | null;
+  confirm_slots: string[] | null;
+  answered_slots: string[] | null;
+};
 type InterviewerDetail = {
   id: string;
   name: string;
   role: string;
   responded: boolean;
+  respondedAt: string | null;
   busy_slots: string[];
+  priorityConfirm: PriorityConfirmRecord | null;
 };
 type RoomDetail = { id: string; name: string; busy_slots: string[] };
+
+type HistoryEntry = {
+  id: string;
+  kind: "interviewer" | "candidate" | "priority_confirm" | "reschedule_request";
+  interviewerName: string | null;
+  status: "pending" | "submitted";
+  createdAt: string;
+  submittedAt: string | null;
+  confirmSlots: string[] | null;
+  answeredSlots: string[] | null;
+  answeredBusySlots: string[] | null;
+  answeredPreferredSlots: string[] | null;
+};
 
 type Stage =
   | "created"
@@ -43,6 +66,14 @@ type InterviewDetail = {
   interviewerProgress: { submitted: number; total: number };
   confirmation_sent_at: string | null;
   note: string | null;
+  history: HistoryEntry[];
+};
+
+const KIND_LABEL: Record<HistoryEntry["kind"], string> = {
+  interviewer: "면접관 불가능 시간 문의",
+  candidate: "후보자 희망 순위 제출 요청",
+  priority_confirm: "면접관 최종 참석 확인",
+  reschedule_request: "후보자 일정 변경 요청 링크",
 };
 
 const RANK_MEDAL = ["🥇", "🥈", "🥉"];
@@ -67,6 +98,9 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
   const [allSlots, setAllSlots] = useState<GridSlot[]>([]);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualSlot, setManualSlot] = useState<string | null>(null);
+  const [expandedPanelId, setExpandedPanelId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/interviews/${id}`);
@@ -245,11 +279,44 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
         <p className="text-sm font-semibold">면접 패널 응답 현황</p>
         <div className="flex flex-wrap gap-1.5">
           {interview.panelDetail.map((p) => (
-            <Badge key={p.id} variant="outline" className="font-normal">
-              {p.name} · {p.role} {p.responded ? "✔" : "○"}
-            </Badge>
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => setExpandedPanelId((cur) => (cur === p.id ? null : p.id))}
+              className="text-left"
+            >
+              <Badge variant="outline" className="font-normal">
+                {p.name} · {p.role} {p.responded ? "✔" : "○"}
+                {p.responded && formatRespondedAt(p.respondedAt) && (
+                  <span className="text-muted-foreground"> ({formatRespondedAt(p.respondedAt)} 응답)</span>
+                )}
+              </Badge>
+            </button>
           ))}
         </div>
+        {expandedPanelId && (
+          <div className="flex flex-col gap-1 rounded-md bg-muted/50 p-2.5 text-xs">
+            {(() => {
+              const p = interview.panelDetail.find((p) => p.id === expandedPanelId)!;
+              const groups = groupBusySlotsByDay(p.busy_slots);
+              return (
+                <>
+                  <span className="font-semibold">{p.name}님이 체크한 불가능 시간</span>
+                  {groups.length === 0 ? (
+                    <span className="text-muted-foreground">없음 (전부 가능하다고 응답)</span>
+                  ) : (
+                    groups.map((group) => (
+                      <div key={group.dayLabel}>
+                        <span className="font-semibold">{group.dayLabel}</span>{" "}
+                        <span className="text-muted-foreground">{group.times.join(", ")}</span>
+                      </div>
+                    ))
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        )}
       </div>
 
       {!matchingDone && (
@@ -288,40 +355,164 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
                   {interview.panelDetail.map((p) => (
                     <th key={p.id} className="px-2 pb-1 text-xs font-medium text-muted-foreground">
                       {p.name}
+                      {p.priorityConfirm?.submitted_at && (
+                        <div className="font-normal">
+                          ({formatRespondedAt(p.priorityConfirm.submitted_at)} 확인)
+                        </div>
+                      )}
                     </th>
                   ))}
                   {interview.status === "pending" && <th className="pb-1" />}
                 </tr>
               </thead>
               <tbody>
-                {interview.preferred_slots.map((slot, i) => (
-                  <tr key={slot} className="border-t">
-                    <td className="whitespace-nowrap py-1.5 pr-3">
-                      {RANK_MEDAL[i] ?? `${i + 1}순위`} {formatSlotLabel(slot)}
-                    </td>
-                    {interview.panelDetail.map((p) => {
-                      const free = !p.busy_slots.includes(slot);
-                      return (
-                        <td
-                          key={p.id}
-                          className={`px-2 text-center ${free ? "text-primary" : "text-destructive"}`}
-                        >
-                          {free ? "✔" : "✘"}
-                        </td>
-                      );
-                    })}
-                    {interview.status === "pending" && (
-                      <td className="pl-2">
-                        <Button size="sm" disabled={busy} onClick={() => handleConfirmPriority(slot)}>
-                          이 시간으로 확정
-                        </Button>
+                {interview.preferred_slots.map((slot, i) => {
+                  // 확정된 시간 그 자체는 항상 "전원 가능"으로 보여준다. 확정되는 순간
+                  // 그 시간을 모든 면접관의 busy_slots에도 추가해서(다른 면접이 겹쳐
+                  // 잡히지 않게) 막아두는데, 그 busy_slots를 그대로 라이브 체크에
+                  // 쓰면 "방금 이 시간으로 확정했는데 이 시간이 불가능하다고" 나오는
+                  // 자기참조 오류가 생긴다.
+                  const isMatchedSlot = slot === interview.matched_slot;
+                  return (
+                    <tr key={slot} className="border-t">
+                      <td className="whitespace-nowrap py-1.5 pr-3">
+                        {RANK_MEDAL[i] ?? `${i + 1}순위`} {formatSlotLabel(slot)}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      {interview.panelDetail.map((p) => {
+                        // 이 시간에 대해 실제로 "참석 가능"이라고 확인 답변을 받은 기록이 있으면
+                        // 그 기록(answered_slots)을 그대로 보여준다. 그 이후 캘린더가 또 바뀌어도
+                        // 이 답변 자체는 바뀌지 않아야 하기 때문에, 라이브 busy_slots보다 우선한다.
+                        const hasFrozenAnswer =
+                          p.priorityConfirm?.status === "submitted" &&
+                          p.priorityConfirm.confirm_slots?.includes(slot);
+                        const free = isMatchedSlot
+                          ? true
+                          : hasFrozenAnswer
+                            ? (p.priorityConfirm!.answered_slots ?? []).includes(slot)
+                            : !p.busy_slots.includes(slot);
+                        return (
+                          <td
+                            key={p.id}
+                            title={
+                              isMatchedSlot
+                                ? "확정된 시간 — 전원 참석 가능 확인됨"
+                                : hasFrozenAnswer
+                                  ? "면접관이 실제로 답변한 기록"
+                                  : "현재 캘린더 기준 추정"
+                            }
+                            className={`px-2 text-center ${free ? "text-primary" : "text-destructive"}`}
+                          >
+                            {free ? "✔" : "✘"}
+                            {!isMatchedSlot && !hasFrozenAnswer && <span className="text-muted-foreground">*</span>}
+                          </td>
+                        );
+                      })}
+                      {interview.status === "pending" && (
+                        <td className="pl-2">
+                          <Button size="sm" disabled={busy} onClick={() => handleConfirmPriority(slot)}>
+                            이 시간으로 확정
+                          </Button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
+          <p className="text-xs text-muted-foreground">
+            * 는 아직 실제 확인 답변이 없어 현재 캘린더 기준으로 추정한 값입니다. *가 없으면 면접관이
+            그 순간에 실제로 &ldquo;가능/불가능&rdquo;이라고 답한 기록입니다.
+          </p>
+        </div>
+      )}
+
+      {interview.history.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-md border p-3">
+          <button
+            type="button"
+            onClick={() => setHistoryOpen((v) => !v)}
+            className="text-left text-sm font-semibold"
+          >
+            전체 응답 히스토리 ({interview.history.length}건) {historyOpen ? "숨기기 ▲" : "보기 ▼"}
+          </button>
+          <p className="text-xs text-muted-foreground">
+            면접관이 언제 무엇을 답했는지, 후보자가 순위를 어떻게 제출했는지, 재조율 요청이
+            있었는지를 시간순으로 모두 보여줍니다.
+          </p>
+          {historyOpen && (
+            <div className="flex flex-col gap-2">
+              {interview.history.map((h) => {
+                const created = formatRespondedAt(h.createdAt);
+                const submitted = h.submittedAt ? formatRespondedAt(h.submittedAt) : null;
+                const isExpanded = expandedHistoryId === h.id;
+                const detailSlots =
+                  h.kind === "interviewer"
+                    ? h.answeredBusySlots
+                    : h.kind === "candidate"
+                      ? h.answeredPreferredSlots
+                      : h.kind === "priority_confirm"
+                        ? h.answeredSlots
+                        : null;
+                const detailNoun =
+                  h.kind === "interviewer" ? "불가능" : h.kind === "priority_confirm" ? "참석 가능" : "제출 순위";
+
+                return (
+                  <div key={h.id} className="rounded-md bg-muted/40 p-2.5 text-xs">
+                    <p className="font-semibold">
+                      {h.interviewerName ? `${h.interviewerName}님` : "후보자"} — {KIND_LABEL[h.kind]}{" "}
+                      <span className="font-normal text-muted-foreground">({created} 발송)</span>
+                    </p>
+                    {h.kind === "priority_confirm" && !!h.confirmSlots?.length && (
+                      <p className="mt-0.5 text-muted-foreground">
+                        물어본 시간: {h.confirmSlots.map((s) => formatSlotLabel(s)).join(", ")}
+                      </p>
+                    )}
+                    {h.status === "submitted" ? (
+                      <p className="mt-0.5">
+                        → {submitted} 응답
+                        {detailSlots !== null && (
+                          <>
+                            : {detailNoun} {detailSlots.length}개
+                            {detailSlots.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedHistoryId((cur) => (cur === h.id ? null : h.id))
+                                }
+                                className="ml-1 text-primary underline"
+                              >
+                                {isExpanded ? "숨기기" : "보기"}
+                              </button>
+                            )}
+                          </>
+                        )}
+                        {detailSlots === null && h.kind !== "reschedule_request" && (
+                          <span className="text-muted-foreground"> (세부 기록 없음 — 이 기능 추가 이전 응답)</span>
+                        )}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-muted-foreground">→ 아직 응답 없음</p>
+                    )}
+                    {isExpanded && !!detailSlots?.length && (
+                      <div className="mt-1.5 flex flex-col gap-1 text-muted-foreground">
+                        {h.kind === "interviewer" ? (
+                          groupBusySlotsByDay(detailSlots).map((group) => (
+                            <div key={group.dayLabel}>
+                              <span className="font-semibold text-foreground">{group.dayLabel}</span>{" "}
+                              {group.times.join(", ")}
+                            </div>
+                          ))
+                        ) : (
+                          <span>{detailSlots.map((s) => formatSlotLabel(s)).join(", ")}</span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { findMatch, requiresRoom, type Interviewer, type Room } from "@/lib/matching";
+import { computeInterviewerProgress } from "@/lib/interviewerProgress";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -13,11 +14,46 @@ export async function GET(_request: Request, { params }: Params) {
 
   const { data: interviewers } = await supabase.from("interviewers").select("*");
   const { data: rooms } = await supabase.from("rooms").select("*");
-  const { data: requests } = await supabase
+  // 이 면접 케이스에 딸린 모든 응답 요청(면접관 불가시간 문의·후보자 순위 제출·
+  // 최종 확인·일정 변경 요청) 기본 정보. 이 컬럼들은 항상 존재하므로, 응답 진행률
+  // 표시가 마이그레이션 여부와 상관없이 항상 정상 동작하도록 별도 쿼리로 뗀다.
+  const { data: baseRequests } = await supabase
     .from("response_requests")
-    .select("interviewer_id,status")
+    .select("id,kind,interviewer_id,status,created_at,submitted_at")
     .eq("interview_id", id)
-    .eq("kind", "interviewer");
+    .order("created_at", { ascending: true });
+
+  // 히스토리 상세(실제로 뭐라고 답했는지)는 마이그레이션이 아직 안 됐으면 컬럼이
+  // 없어 쿼리 전체가 실패할 수 있다 — 그 경우에도 위 기본 진행률 표시는 깨지지
+  // 않도록, 실패하면 그냥 빈 값으로 대체한다(점진적으로 기능이 켜지는 형태).
+  const { data: detailRequests } = await supabase
+    .from("response_requests")
+    .select("id,confirm_slots,answered_slots,answered_busy_slots,answered_preferred_slots")
+    .eq("interview_id", id);
+  const detailById = new Map((detailRequests ?? []).map((d) => [d.id, d]));
+
+  const allRequests = (baseRequests ?? []).map((r) => ({ ...r, ...(detailById.get(r.id) ?? {}) }));
+  const requests = allRequests.filter((r) => r.kind === "interviewer");
+  // 같은 사람이 여러 번(재확인) 답했을 수 있으니, 매트릭스에 보여줄 "최신 답변"은
+  // 최신순으로 찾는다.
+  const priorityConfirms = [...allRequests]
+    .filter((r) => r.kind === "priority_confirm")
+    .sort((a, b) => b.created_at.localeCompare(a.created_at));
+
+  const progress = computeInterviewerProgress(data.panel as string[], requests);
+
+  const history = allRequests.map((r) => ({
+    id: r.id,
+    kind: r.kind as "interviewer" | "candidate" | "priority_confirm" | "reschedule_request",
+    interviewerName: interviewers?.find((p) => p.id === r.interviewer_id)?.name ?? null,
+    status: r.status as "pending" | "submitted",
+    createdAt: r.created_at,
+    submittedAt: r.submitted_at,
+    confirmSlots: r.confirm_slots ?? null,
+    answeredSlots: r.answered_slots ?? null,
+    answeredBusySlots: r.answered_busy_slots ?? null,
+    answeredPreferredSlots: r.answered_preferred_slots ?? null,
+  }));
 
   return NextResponse.json({
     ...data,
@@ -26,15 +62,20 @@ export async function GET(_request: Request, { params }: Params) {
       .filter(Boolean)
       .map((p) => ({
         ...p!,
-        responded: requests?.some((r) => r.interviewer_id === p!.id && r.status === "submitted") ?? false,
+        responded: progress.respondedIds.has(p!.id),
+        respondedAt:
+          requests
+            .filter((r) => r.interviewer_id === p!.id && r.status === "submitted")
+            .map((r) => r.submitted_at)
+            .sort()
+            .at(-1) ?? null,
+        priorityConfirm: priorityConfirms.find((r) => r.interviewer_id === p!.id) ?? null,
       })),
     roomName: rooms?.find((r) => r.id === data.room_id)?.name ?? null,
     // 수동 확정 히트맵에서 임의의 시간에 회의실이 비어있는지 판단하는 데 쓴다.
     rooms: rooms ?? [],
-    interviewerProgress: {
-      submitted: requests?.filter((r) => r.status === "submitted").length ?? 0,
-      total: requests?.length ?? 0,
-    },
+    interviewerProgress: { submitted: progress.submitted, total: progress.total },
+    history,
   });
 }
 

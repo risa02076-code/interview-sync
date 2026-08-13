@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendInterviewerInvites } from "@/lib/sendInterviewerInvites";
+import { computeInterviewerProgress } from "@/lib/interviewerProgress";
 
 export async function GET() {
   const supabase = createAdminClient();
@@ -24,22 +25,20 @@ export async function GET() {
       (r) => r.interview_id === iv.id && r.kind === "candidate",
     );
 
+    const progress = computeInterviewerProgress(iv.panel as string[], interviewerReqs);
     const panelDetail = (iv.panel as string[])
       .map((id) => interviewers?.find((p) => p.id === id))
       .filter(Boolean)
       .map((p) => ({
         ...p!,
-        responded: interviewerReqs.some((r) => r.interviewer_id === p!.id && r.status === "submitted"),
+        responded: progress.respondedIds.has(p!.id),
       }));
 
     return {
       ...iv,
       panelDetail,
       roomName: rooms?.find((r) => r.id === iv.room_id)?.name ?? null,
-      interviewerProgress: {
-        submitted: interviewerReqs.filter((r) => r.status === "submitted").length,
-        total: interviewerReqs.length,
-      },
+      interviewerProgress: { submitted: progress.submitted, total: progress.total },
       candidateResponded: candidateReq?.status === "submitted",
     };
   });
