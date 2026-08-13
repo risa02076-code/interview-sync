@@ -7,7 +7,7 @@ import { SlotGrid } from "@/components/slot-grid";
 type Slot = { key: string; label: string };
 
 type Context = {
-  kind: "candidate" | "interviewer" | "priority_confirm" | "reschedule_request";
+  kind: "candidate" | "interviewer" | "priority_confirm" | "reschedule_request" | "candidate_wide_availability";
   status: "pending" | "submitted";
   name: string;
   subtitle: string;
@@ -53,6 +53,11 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   const [ctx, setCtx] = useState<Context | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [available, setAvailable] = useState<Set<string>>(new Set());
+  const [rescheduleAvailable, setRescheduleAvailable] = useState<Set<string>>(new Set());
+  const [wideAvailable, setWideAvailable] = useState<Set<string>>(new Set());
+  const [escalateOpen, setEscalateOpen] = useState(false);
+  const [escalateDate, setEscalateDate] = useState("");
+  const [escalateReason, setEscalateReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
@@ -143,6 +148,24 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
     });
   }
 
+  function paintReschedule(key: string, select: boolean) {
+    setRescheduleAvailable((cur) => {
+      const next = new Set(cur);
+      if (select) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
+  function paintWideAvailable(key: string, select: boolean) {
+    setWideAvailable((cur) => {
+      const next = new Set(cur);
+      if (select) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
   function toggleAvailable(key: string) {
     setAvailable((cur) => {
       const next = new Set(cur);
@@ -173,7 +196,11 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
   async function submitReschedule() {
     setSubmitting(true);
     setError(null);
-    const res = await fetch(`/api/respond/${token}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    const res = await fetch(`/api/respond/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ availableSlots: Array.from(rescheduleAvailable) }),
+    });
     setSubmitting(false);
     if (!res.ok) {
       setError((await res.json()).error ?? "요청에 실패했습니다.");
@@ -211,7 +238,48 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       setError((await res.json()).error ?? "제출에 실패했습니다.");
       return;
     }
+    // 서버에서 이 링크의 kind가 candidate_wide_availability로 바뀌었으니, 다시 불러와서
+    // 다음 단계(다음 주 가능한 시간 체크) 화면으로 곧바로 넘어간다.
+    const refreshed = await fetch(`/api/respond/${token}`);
+    if (refreshed.ok) setCtx(await refreshed.json());
+  }
+
+  async function submitWideAvailability() {
+    setSubmitting(true);
+    setError(null);
+    const res = await fetch(`/api/respond/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ availableSlots: Array.from(wideAvailable) }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError((await res.json()).error ?? "제출에 실패했습니다.");
+      return;
+    }
     setDoneReason("requested-more");
+    setDone(true);
+  }
+
+  async function submitEscalateNote() {
+    setSubmitting(true);
+    setError(null);
+    const note = [
+      escalateDate ? `가능한 시점: ${escalateDate}` : null,
+      escalateReason.trim() ? `사유: ${escalateReason.trim()}` : null,
+    ]
+      .filter(Boolean)
+      .join(" / ");
+    const res = await fetch(`/api/respond/${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ availableSlots: [], candidateNote: note }),
+    });
+    setSubmitting(false);
+    if (!res.ok) {
+      setError((await res.json()).error ?? "제출에 실패했습니다.");
+      return;
+    }
     setDone(true);
   }
 
@@ -276,9 +344,9 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       );
     }
     return (
-      <div className="mx-auto flex max-w-md flex-col gap-5 p-6">
+      <div className="mx-auto flex max-w-3xl flex-col gap-5 p-6">
         <div>
-          <h1 className="text-xl font-bold">{ctx.name}님, 일정을 변경하시겠어요?</h1>
+          <h1 className="text-xl font-bold">{ctx.name}님, 가능한 시간을 모두 알려주세요</h1>
           <p className="text-sm text-muted-foreground">{ctx.subtitle}</p>
         </div>
         {ctx.currentSlotLabel ? (
@@ -291,12 +359,105 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
           </p>
         )}
         <p className="text-sm">
-          아래 버튼을 누르면 이 시간을 취소하고, 가능한 다른 시간을 다시 찾아 안내드립니다.
+          이 시간에 참석이 어려우시면, 이번 주와 다음 주 중 참석 가능한 시간을 30분 단위로 모두
+          체크해주세요.
         </p>
+        <p className="text-sm text-muted-foreground">
+          넓게 체크해주실수록 새 일정을 더 빨리 찾을 수 있습니다. 체크하신 시간을 면접관 전원에게
+          보내 참석 가능 여부를 확인한 뒤 안내드립니다.
+        </p>
+        <SlotGrid
+          slots={ctx.slots}
+          selected={rescheduleAvailable}
+          onPaint={paintReschedule}
+        />
         {error && <p className="text-sm text-destructive">{error}</p>}
-        <Button onClick={submitReschedule} disabled={submitting || !ctx.currentSlotLabel} variant="destructive">
-          {submitting ? "처리 중..." : "네, 다른 시간을 알아봐주세요"}
+        <Button onClick={submitReschedule} disabled={submitting || !ctx.currentSlotLabel}>
+          {submitting ? "처리 중..." : "제출하고 새 일정 찾기"}
         </Button>
+      </div>
+    );
+  }
+
+  if (ctx.kind === "candidate_wide_availability") {
+    if (ctx.status === "submitted" || done) {
+      return (
+        <div className="mx-auto max-w-md p-6">
+          <p className="text-lg font-semibold">제출이 완료되었습니다.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {doneReason === "requested-more"
+              ? "체크해주신 시간을 면접관 전원에게 확인받아 새로운 일정을 안내드리겠습니다. 창을 닫으셔도 됩니다."
+              : "알려주신 내용을 채용담당자에게 전달했습니다. 확인 후 다시 안내드리겠습니다. 창을 닫으셔도 됩니다."}
+          </p>
+        </div>
+      );
+    }
+    return (
+      <div className="mx-auto flex max-w-3xl flex-col gap-5 p-6">
+        <div>
+          <h1 className="text-xl font-bold">{ctx.name}님, 다음 주 가능한 시간을 알려주세요</h1>
+          <p className="text-sm text-muted-foreground">{ctx.subtitle}</p>
+        </div>
+        <p className="text-sm">
+          이번 주에 제안된 시간이 모두 어려우시다고 하셔서, 다음 주 중 참석 가능한 시간을 여쭤봅니다.
+          30분 단위로 가능한 시간을 모두 체크해주세요.
+        </p>
+        <SlotGrid slots={ctx.slots} selected={wideAvailable} onPaint={paintWideAvailable} />
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <Button onClick={submitWideAvailability} disabled={submitting || wideAvailable.size === 0}>
+          {submitting ? "처리 중..." : "제출하기"}
+        </Button>
+
+        <div className="rounded-md border p-3">
+          {!escalateOpen ? (
+            <button
+              type="button"
+              onClick={() => setEscalateOpen(true)}
+              className="text-sm text-muted-foreground underline"
+            >
+              다음 주도 전부 어려우신가요?
+            </button>
+          ) : (
+            <div className="flex flex-col gap-2.5">
+              <p className="text-sm font-medium">다음 주도 참석이 어려우신 경우</p>
+              <p className="text-xs text-muted-foreground">
+                가능하신 시점과 사유를 알려주시면 채용담당자가 직접 확인하고 다시 안내드립니다.
+              </p>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-muted-foreground" htmlFor="escalateDate">
+                  가능하신 날짜(선택)
+                </label>
+                <input
+                  id="escalateDate"
+                  type="date"
+                  value={escalateDate}
+                  onChange={(e) => setEscalateDate(e.target.value)}
+                  className="rounded-md border bg-background px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs text-muted-foreground" htmlFor="escalateReason">
+                  사유(선택)
+                </label>
+                <textarea
+                  id="escalateReason"
+                  value={escalateReason}
+                  onChange={(e) => setEscalateReason(e.target.value)}
+                  placeholder="예: 해외 출장 중이라 8월 말부터 가능합니다."
+                  className="min-h-20 rounded-md border bg-background px-3 py-1.5 text-sm"
+                />
+              </div>
+              {error && <p className="text-sm text-destructive">{error}</p>}
+              <Button
+                variant="secondary"
+                onClick={submitEscalateNote}
+                disabled={submitting}
+              >
+                {submitting ? "처리 중..." : "이 내용으로 채용담당자에게 전달"}
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -370,9 +531,13 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
       </p>
 
       {!isCandidate && (ctx.status === "submitted" || done) && (
-        <p className="rounded-md bg-primary/10 p-2.5 text-sm text-primary">
-          이미 제출하셨습니다. 이후에 일정이 더 생기면 이 링크에서 언제든 다시 고쳐 제출하실 수 있습니다.
-        </p>
+        <div className="flex flex-col gap-1 rounded-md bg-primary/10 p-2.5 text-sm text-primary">
+          <p>제출 완료되었습니다.</p>
+          <p>
+            이후에 새로 생긴 불가능한 시간이 있으면 이 링크에서 바로 추가해주세요 — 후보자가 시간을
+            고를 때 자동으로 반영됩니다.
+          </p>
+        </div>
       )}
 
       {removedWhileRanked.length > 0 && (

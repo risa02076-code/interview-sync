@@ -10,6 +10,10 @@ import { confirmFromPriorities } from "@/lib/confirmFromPriorities";
 
 type Params = { params: Promise<{ token: string }> };
 
+/** 일정 변경 요청 시, 후보자에게 얼마나 넓은 기간(영업일)을 보여주고 체크하게 할지.
+ * 이번 주 + 다음 주 정도를 커버하도록 잡았다. */
+const RESCHEDULE_AVAILABILITY_BUSINESS_DAYS = 10;
+
 export async function GET(_request: Request, { params }: Params) {
   const { token } = await params;
   const supabase = createAdminClient();
@@ -62,6 +66,26 @@ export async function GET(_request: Request, { params }: Params) {
     });
   }
 
+  if (reqRow.kind === "candidate_wide_availability") {
+    const { data: interview } = await supabase
+      .from("interviews")
+      .select("candidate_name, position")
+      .eq("id", reqRow.interview_id)
+      .single();
+
+    // "다음 주" — 오늘부터 7일 뒤를 기준으로 영업일 5일(1주)을 새로 계산한다.
+    const nextWeekFrom = new Date();
+    nextWeekFrom.setDate(nextWeekFrom.getDate() + 7);
+
+    return NextResponse.json({
+      kind: "candidate_wide_availability",
+      status: reqRow.status,
+      name: interview?.candidate_name,
+      subtitle: interview?.position,
+      slots: generateUpcomingSlots(5, 9, 18, 30, nextWeekFrom),
+    });
+  }
+
   if (reqRow.kind === "reschedule_request") {
     const { data: interview } = await supabase
       .from("interviews")
@@ -79,7 +103,9 @@ export async function GET(_request: Request, { params }: Params) {
         interview?.status === "confirmed" && interview.matched_slot
           ? formatSlotLabel(interview.matched_slot)
           : null,
-      slots: [],
+      // 후보자가 가능한 시간을 넓게 체크하게 한다 — 면접관 데이터와 바로 대조해서
+      // 겹치는 시간이 있으면 다시 물어보지 않고 곧바로 확정할 수 있게 하기 위함이다.
+      slots: generateUpcomingSlots(RESCHEDULE_AVAILABILITY_BUSINESS_DAYS),
     });
   }
 
@@ -157,11 +183,15 @@ export async function GET(_request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { token } = await params;
-  const { selectedSlots, preferredSlots, allUnavailable, availableSlots } = (await request.json()) as {
+  const { selectedSlots, preferredSlots, allUnavailable, availableSlots, candidateNote } = (await request.json()) as {
     selectedSlots?: string[];
     preferredSlots?: string[];
     allUnavailable?: boolean;
     availableSlots?: string[];
+    // kind='candidate_wide_availability'일 때만 사용: 다음 주도 어렵다는 후보자가 자유
+    // 형식으로 남긴 "가능한 시점/사유". 매칭 엔진이 처리할 수 없는 예외라 리크루터에게
+    // 그대로 넘긴다.
+    candidateNote?: string;
   };
 
   const supabase = createAdminClient();
@@ -179,8 +209,21 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   if (reqRow.kind === "candidate" && allUnavailable) {
-    // 제안된 시간이 전부 안 맞는다는 응답 — 매칭을 시도하지 않고, 조회 기간을 넓혀
-    // 면접관 전원에게 다시 문의한다(면접관 쪽 재문의 로직을 그대로 재사용).
+    // 제안된 시간이 전부 안 맞는다는 응답 — 면접관을 다시 들쑤시는 대신, 이 같은
+    // 링크에서 후보자에게 다음 주 가능한 시간을 직접 체크하게 한다(재조율 흐름과
+    // 동일한 사상: 후보자 쪽 제약이 원인이니 후보자에게 먼저 물어본다).
+    await supabase
+      .from("response_requests")
+      .update({ kind: "candidate_wide_availability" })
+      .eq("token", token);
+    // 아직 최종 제출이 아니라 다음 단계로 넘어가는 것뿐이므로, 이 요청을 submitted로
+    // 표시하는 아래 공통 로직을 타지 않고 바로 반환한다.
+    return NextResponse.json({ ok: true });
+  } else if (reqRow.kind === "candidate_wide_availability") {
+    // 후보자가 다음 주 중 가능한 시간을 체크해서 보냈으면(candidateSlots), 그 시간
+    // 전체를 면접관 전원에게 보내 참석 가능 여부를 확인받는다(reschedule과 동일).
+    // 하나도 체크하지 않고 자유 입력(가능한 시점/사유)만 보냈으면, 매칭 엔진이 처리할
+    // 수 없는 예외이므로 리크루터에게 그대로 에스컬레이션한다.
     const { data: interview } = await supabase
       .from("interviews")
       .select("*")
@@ -188,15 +231,24 @@ export async function POST(request: Request, { params }: Params) {
       .single();
     if (interview) {
       const origin = new URL(request.url).origin;
-      if (interview.availability_round < MAX_AVAILABILITY_ROUNDS) {
-        await requestMoreAvailability(supabase, interview, origin, interview.availability_round + 1);
+      const candidateSlots = [...new Set(availableSlots ?? [])].sort();
+
+      if (candidateSlots.length) {
+        await supabase
+          .from("interviews")
+          .update({ preferred_slots: candidateSlots, stage: "candidate_done" })
+          .eq("id", interview.id);
+        const { data: reFetched } = await supabase.from("interviews").select("*").eq("id", interview.id).single();
+        if (reFetched) await requestPriorityConfirmation(supabase, reFetched, origin);
       } else {
         await supabase
           .from("interviews")
           .update({
             status: "escalated",
             stage: "interviewer_done",
-            note: `후보자가 제안된 시간을 모두 거절함 — 조회 기간을 ${MAX_AVAILABILITY_ROUNDS}차까지 넓혀도 대안을 찾지 못함, 리크루터 확인 필요`,
+            note: candidateNote?.trim()
+              ? `후보자가 다음 주도 참석이 어렵다고 함 — 가능한 시점/사유: "${candidateNote.trim()}"`
+              : "후보자가 다음 주도 참석이 어렵다고 함(사유 미기재) — 리크루터 확인 필요",
           })
           .eq("id", interview.id);
       }
@@ -210,6 +262,12 @@ export async function POST(request: Request, { params }: Params) {
       .from("interviews")
       .update({ preferred_slots: finalSlots, stage: "candidate_done" })
       .eq("id", reqRow.interview_id);
+    // 재조율이 일어나면 interviews.preferred_slots는 초기화되니, 이번에 실제로
+    // 뭘 골랐는지는 이 요청 행 자체에도 스냅샷으로 남겨 히스토리에서 볼 수 있게 한다.
+    await supabase
+      .from("response_requests")
+      .update({ answered_preferred_slots: finalSlots })
+      .eq("token", token);
 
     const { data: interview } = await supabase
       .from("interviews")
@@ -232,14 +290,20 @@ export async function POST(request: Request, { params }: Params) {
       .eq("id", reqRow.interviewer_id)
       .single();
     const keptBusy = ((interviewer?.busy_slots as string[] | null) ?? []).filter((s) => !offered.includes(s));
+    // 지금 답한 내용을 그대로 기록해둔다 — busy_slots는 나중에 또 바뀔 수 있어서,
+    // "이때 뭐라고 답했는지"를 리크루터가 나중에도 확인할 수 있게 하기 위함이다.
+    await supabase.from("response_requests").update({ answered_slots: availableSlots ?? [] }).eq("token", token);
     await supabase
       .from("interviewers")
       .update({ busy_slots: [...keptBusy, ...nowUnavailable] })
       .eq("id", reqRow.interviewer_id);
   } else if (reqRow.kind === "reschedule_request") {
     // 확정된 일정을 후보자가 바꿔달라고 요청한 경우. 기존 매칭된 시간을 먼저 비우고,
-    // 이미 수합해둔 면접관 데이터로 다른 공통 시간이 있으면(시나리오 A) 곧바로 후보자에게
-    // 다시 제안하고, 없으면(시나리오 B) 면접관 전원에게 가능 시간을 처음부터 다시 수합한다.
+    // 후보자가 이번에 넓게 체크해서 보낸 "가능한 시간들"을 받는다. 이미 알고 있는
+    // 면접관 캘린더만 보고 조용히 확정하지 않는다 — 그 데이터가 마지막 응답 이후
+    // 바뀌었을 수 있으니, 후보자가 가능하다고 한 시간 전체를 면접관 전원에게 다시
+    // 확인받는다(priority_confirm 재사용). 전원이 응답하면 그중 전원 가능한 가장 앞
+    // 시간으로 자동 확정된다.
     const { data: interview } = await supabase
       .from("interviews")
       .select("*")
@@ -270,6 +334,9 @@ export async function POST(request: Request, { params }: Params) {
 
       // 방금 거절당한 이 시간은 앞으로도 다시 추천하지 않도록 영구히 제외 목록에 남긴다.
       const excludedSlots = [...new Set([...(interview.excluded_slots as string[]), oldSlot])];
+      const candidateSlots = [...new Set(availableSlots ?? [])]
+        .filter((s) => !excludedSlots.includes(s))
+        .sort();
 
       await supabase
         .from("interviews")
@@ -284,27 +351,32 @@ export async function POST(request: Request, { params }: Params) {
         })
         .eq("id", interview.id);
 
-      const { data: freshPanel } = await supabase.from("interviewers").select("*").in("id", interview.panel);
-      const needsRoom = requiresRoom(interview.interview_type);
-      const { data: rooms } = needsRoom ? await supabase.from("rooms").select("*") : { data: [] };
-      const recommendations = recommendLeastConflictSlots(freshPanel ?? [], rooms ?? [], needsRoom, 5, excludedSlots);
-      const hasPerfectMatch = recommendations.length > 0 && recommendations[0].conflicts.length === 0;
-
       const origin = new URL(request.url).origin;
-      const { data: freshInterview } = await supabase
-        .from("interviews")
-        .select("*")
-        .eq("id", interview.id)
-        .single();
 
-      if (freshInterview) {
-        if (hasPerfectMatch) {
-          await supabase.from("interviews").update({ stage: "candidate_pending" }).eq("id", interview.id);
-          await sendCandidateInvite(supabase, freshInterview, origin);
-        } else {
-          await supabase.from("interviews").update({ availability_round: 1 }).eq("id", interview.id);
-          await sendInterviewerInvites(supabase, freshInterview, origin);
-        }
+      if (candidateSlots.length) {
+        // 후보자가 가능하다고 체크한 시간 전체를 면접관 전원에게 보내 참석 가능 여부를
+        // 확인받는다. 전원이 응답하면 confirmFromPriorities가 전원 가능한 가장 앞
+        // 시간으로 자동 확정한다(면접관이 여러 명이어도 후보자가 넓게 체크했으니
+        // 공통 시간을 찾을 여지가 충분하다).
+        await supabase
+          .from("interviews")
+          .update({ preferred_slots: candidateSlots, stage: "candidate_done" })
+          .eq("id", interview.id);
+        const { data: reFetched } = await supabase.from("interviews").select("*").eq("id", interview.id).single();
+        if (reFetched) await requestPriorityConfirmation(supabase, reFetched, origin);
+      } else {
+        // 후보자가 가능한 시간을 하나도 체크하지 않았으면, 폴백으로 면접관 전원에게
+        // 처음부터 다시 가능 시간을 수합한다.
+        await supabase
+          .from("interviews")
+          .update({
+            availability_round: 1,
+            status: "pending",
+            note: "후보자가 가능한 시간을 선택하지 않음 — 면접관 전원에게 다시 가능 시간을 수합함",
+          })
+          .eq("id", interview.id);
+        const { data: reFetched } = await supabase.from("interviews").select("*").eq("id", interview.id).single();
+        if (reFetched) await sendInterviewerInvites(supabase, reFetched, origin);
       }
     }
   } else {
@@ -312,6 +384,12 @@ export async function POST(request: Request, { params }: Params) {
       .from("interviewers")
       .update({ busy_slots: selectedSlots ?? [] })
       .eq("id", reqRow.interviewer_id);
+    // interviewers.busy_slots는 다음 라운드에 덮어써지니, 이번 라운드에 실제로
+    // 제출한 값은 이 요청 행에 스냅샷으로 남겨 히스토리에서 볼 수 있게 한다.
+    await supabase
+      .from("response_requests")
+      .update({ answered_busy_slots: selectedSlots ?? [] })
+      .eq("token", token);
   }
 
   await supabase
