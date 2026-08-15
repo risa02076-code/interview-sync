@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { sendCandidateInvite } from "./sendCandidateInvite";
 import { sendEmail } from "./email";
 
-vi.mock("./email", () => ({ sendEmail: vi.fn() }));
+vi.mock("./email", () => ({
+  sendEmail: vi.fn(),
+  emailErrorReason: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+}));
 
 type Row = { table: string; payload: Record<string, unknown> };
 
@@ -52,6 +55,7 @@ describe("sendCandidateInvite", () => {
     expect(result.ok).toBe(false);
     const noteUpdate = updateCalls.find((c) => "note" in c.payload);
     expect(noteUpdate?.payload.note).toContain("발송 실패");
+    expect(noteUpdate?.payload.note).toContain("SMTP 실패");
     expect(updateCalls.some((c) => "stage" in c.payload)).toBe(false);
     expect(updateCalls.some((c) => "recommended_slots" in c.payload)).toBe(false);
     expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(false);

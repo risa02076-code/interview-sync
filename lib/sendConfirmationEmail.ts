@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { sendEmail } from "./email";
+import { sendEmail, emailErrorReason } from "./email";
 import { formatSlotLabel } from "./slots";
 import { generateToken } from "./token";
 
@@ -77,8 +77,8 @@ export async function sendConfirmationEmail(
           ${rescheduleLink ? `<p><a href="${rescheduleLink}">일정 변경이 필요하신가요? 여기를 클릭해주세요</a></p>` : ""}
         `,
       );
-    } catch {
-      failed.push(`후보자(${interview.candidate_email})`);
+    } catch (e) {
+      failed.push(`후보자(${interview.candidate_email}, 사유: ${emailErrorReason(e)})`);
     }
   }
 
@@ -93,8 +93,8 @@ export async function sendConfirmationEmail(
           <p style="color:#888;font-size:12px">이 시간에 참석이 어려우시거나 문제가 있으면 리크루터에게 알려주세요.</p>
         `,
       );
-    } catch {
-      failed.push(`면접관(${to})`);
+    } catch (e) {
+      failed.push(`면접관(${to}, 사유: ${emailErrorReason(e)})`);
     }
   }
 

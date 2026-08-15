@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { sendConfirmationEmail } from "./sendConfirmationEmail";
 import { sendEmail } from "./email";
 
-vi.mock("./email", () => ({ sendEmail: vi.fn() }));
+vi.mock("./email", () => ({
+  sendEmail: vi.fn(),
+  emailErrorReason: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+}));
 
 /**
  * sendConfirmationEmail이 실제로 두는 supabase 호출 체인만 지원하는 최소 가짜 클라이언트.
@@ -61,6 +64,7 @@ describe("sendConfirmationEmail", () => {
     const noteUpdate = updateCalls.find((c) => "note" in c.payload);
     expect(noteUpdate?.payload.note).toContain("발송 실패");
     expect(noteUpdate?.payload.note).toContain("candidate@example.com");
+    expect(noteUpdate?.payload.note).toContain("SMTP 연결 실패");
     expect(updateCalls.some((c) => "confirmation_sent_at" in c.payload)).toBe(false);
   });
 

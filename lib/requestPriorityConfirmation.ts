@@ -1,6 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { generateToken } from "./token";
-import { sendEmail } from "./email";
+import { sendEmail, emailErrorReason } from "./email";
 import { formatSlotLabel } from "./slots";
 
 type Interview = {
@@ -34,7 +34,7 @@ export async function requestPriorityConfirmation(
     .join("<br/>");
 
   let sent = 0;
-  const failed: string[] = [];
+  const failed: { name: string; reason: string }[] = [];
   for (const interviewer of panelInterviewers) {
     if (!interviewer.email) continue;
     const token = generateToken();
@@ -64,25 +64,26 @@ export async function requestPriorityConfirmation(
       );
       await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
       sent += 1;
-    } catch {
-      failed.push(interviewer.name);
+    } catch (e) {
+      failed.push({ name: interviewer.name, reason: emailErrorReason(e) });
     }
   }
 
+  const failedText = failed.map((f) => `${f.name}(사유: ${f.reason})`).join(", ");
   await supabase
     .from("interviews")
     .update({
       stage: "priority_confirm_pending",
       ...(failed.length
         ? {
-            note: `⚠️ 최종 확인 요청 메일 발송 실패: ${failed.join(", ")} — 아래 "재발송" 버튼으로 다시 보내주세요`,
+            note: `⚠️ 최종 확인 요청 메일 발송 실패: ${failedText} — 아래 "재발송" 버튼으로 다시 보내주세요`,
           }
         : {}),
     })
     .eq("id", interview.id);
 
   if (failed.length) {
-    return { ok: false, error: `다음 면접관에게 메일 발송 실패: ${failed.join(", ")}` };
+    return { ok: false, error: `다음 면접관에게 메일 발송 실패: ${failedText}` };
   }
   return { ok: true, sent };
 }

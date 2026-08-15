@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateToken } from "@/lib/token";
-import { sendEmail } from "@/lib/email";
+import { sendEmail, emailErrorReason } from "@/lib/email";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -41,8 +41,11 @@ export async function POST(request: Request, { params }: Params) {
         <p><a href="${link}">${link}</a></p>
       `,
     );
-  } catch {
-    return NextResponse.json({ error: "메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요." }, { status: 502 });
+  } catch (e) {
+    return NextResponse.json(
+      { error: `메일 발송에 실패했습니다(${emailErrorReason(e)}). 잠시 후 다시 시도해주세요.` },
+      { status: 502 },
+    );
   }
 
   await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);

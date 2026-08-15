@@ -1,6 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { generateToken } from "./token";
-import { sendEmail } from "./email";
+import { sendEmail, emailErrorReason } from "./email";
 import { formatSlotLabel } from "./slots";
 import { recommendLeastConflictSlots, requiresRoom, type Interviewer, type Room } from "./matching";
 
@@ -78,16 +78,17 @@ export async function sendCandidateInvite(
         <p><a href="${link}">${link}</a></p>
       `,
     );
-  } catch {
+  } catch (e) {
     // 메일이 실제로 안 나갔는데 stage를 candidate_pending으로 넘기면 "후보자 응답
     // 대기 중"이라고 잘못 표시된다 — 그러니 stage는 건드리지 않고 실패만 남긴다.
+    const reason = emailErrorReason(e);
     await supabase
       .from("interviews")
       .update({
-        note: `⚠️ 후보자 초대 메일 발송 실패(${interview.candidate_email}) — "후보자에게 이메일 발송" 버튼을 다시 눌러주세요`,
+        note: `⚠️ 후보자 초대 메일 발송 실패(${interview.candidate_email}, 사유: ${reason}) — "후보자에게 이메일 발송" 버튼을 다시 눌러주세요`,
       })
       .eq("id", interview.id);
-    return { ok: false, error: "후보자에게 메일 발송에 실패했습니다." };
+    return { ok: false, error: `후보자에게 메일 발송에 실패했습니다(${reason}).` };
   }
 
   // 제안 시점의 시간들을 고정해서 저장해둔다. 후보자가 링크를 다시 열어봐도(면접관

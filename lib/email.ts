@@ -24,6 +24,16 @@ function getTransporter() {
  * 발송이 조용히 건너뛰어진다(에러를 던지면 호출하는 쪽의 나머지 로직—상태 갱신
  * 등—까지 막힐 수 있어서, 실패가 아니라 스킵으로 처리한다).
  */
+/**
+ * 발송 실패 사유를 채용담당자가 볼 노트에 그대로 노출해도 되는 길이로 정리한다.
+ * (SMTP 인증 실패 같은 건 개발자가 봐야 하지만, "잘못된 이메일 주소" 같은 건
+ * 채용담당자가 보고 바로 면접관 정보를 고칠 수 있어서 굳이 숨길 이유가 없다.)
+ */
+export function emailErrorReason(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e);
+  return msg.length > 200 ? `${msg.slice(0, 200)}…` : msg;
+}
+
 export async function sendEmail(to: string, subject: string, html: string) {
   if (process.env.EMAIL_SENDING_ENABLED === "false") {
     console.warn(`[email-killswitch] 발송 건너뜀 — to=${to}, subject=${subject}`);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateToken } from "@/lib/token";
-import { sendEmail } from "@/lib/email";
+import { sendEmail, emailErrorReason } from "@/lib/email";
 import { formatSlotLabel } from "@/lib/slots";
 
 type Params = { params: Promise<{ id: string }> };
@@ -66,12 +66,13 @@ export async function POST(request: Request, { params }: Params) {
         <p><a href="${link}">${link}</a></p>
       `,
     );
-  } catch {
+  } catch (e) {
+    const reason = emailErrorReason(e);
     await supabase
       .from("interviews")
-      .update({ note: `⚠️ ${interviewer.name}님에게 최종 확인 재발송 실패 — 다시 시도해주세요` })
+      .update({ note: `⚠️ ${interviewer.name}님에게 최종 확인 재발송 실패(사유: ${reason}) — 다시 시도해주세요` })
       .eq("id", id);
-    return NextResponse.json({ error: "메일 발송에 실패했습니다." }, { status: 502 });
+    return NextResponse.json({ error: `메일 발송에 실패했습니다(${reason}).` }, { status: 502 });
   }
 
   await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);

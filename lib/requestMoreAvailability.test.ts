@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { requestMoreAvailability } from "./requestMoreAvailability";
 import { sendEmail } from "./email";
 
-vi.mock("./email", () => ({ sendEmail: vi.fn() }));
+vi.mock("./email", () => ({
+  sendEmail: vi.fn(),
+  emailErrorReason: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+}));
 
 type Row = { table: string; payload: Record<string, unknown> };
 
@@ -48,6 +51,7 @@ describe("requestMoreAvailability", () => {
     const noteUpdate = updateCalls.find((c) => "note" in c.payload);
     expect(noteUpdate?.payload.note).toContain("영업일 10일");
     expect(noteUpdate?.payload.note).toContain("배지훈");
+    expect(noteUpdate?.payload.note).toContain("SMTP 실패");
   });
 
   it("전원 성공하면 재문의 안내 note만 남고 실패 문구는 없다", async () => {

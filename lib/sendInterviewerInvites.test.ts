@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { sendInterviewerInvites } from "./sendInterviewerInvites";
 import { sendEmail } from "./email";
 
-vi.mock("./email", () => ({ sendEmail: vi.fn() }));
+vi.mock("./email", () => ({
+  sendEmail: vi.fn(),
+  emailErrorReason: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+}));
 
 type Row = { table: string; payload: Record<string, unknown> };
 
@@ -49,6 +52,8 @@ describe("sendInterviewerInvites", () => {
     const noteUpdate = updateCalls.find((c) => "note" in c.payload);
     expect(noteUpdate?.payload.note).toContain("배지훈");
     expect(noteUpdate?.payload.note).not.toContain("오세훈");
+    // 실패 사유(SMTP 에러 메시지)도 그대로 노출되어야 채용담당자가 원인을 알 수 있다.
+    expect(noteUpdate?.payload.note).toContain("SMTP 실패");
     expect(updateCalls.some((c) => c.payload.stage === "interviewer_pending")).toBe(true);
     // 발송에 성공한 사람 몫으로는 email_sent_at이 기록되어야, 실패한 사람과 화면에서 구분된다.
     expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);

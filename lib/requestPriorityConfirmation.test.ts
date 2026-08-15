@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { requestPriorityConfirmation } from "./requestPriorityConfirmation";
 import { sendEmail } from "./email";
 
-vi.mock("./email", () => ({ sendEmail: vi.fn() }));
+vi.mock("./email", () => ({
+  sendEmail: vi.fn(),
+  emailErrorReason: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+}));
 
 type Row = { table: string; payload: Record<string, unknown> };
 
@@ -53,6 +56,7 @@ describe("requestPriorityConfirmation", () => {
     expect(result).toEqual({ ok: false, error: expect.stringContaining("배지훈") });
     const noteUpdate = updateCalls.find((c) => "note" in c.payload);
     expect(noteUpdate?.payload.note).toContain("배지훈");
+    expect(noteUpdate?.payload.note).toContain("SMTP 실패");
   });
 
   it("이메일이 없는 면접관은 건너뛰고 sent 카운트에 포함하지 않는다", async () => {

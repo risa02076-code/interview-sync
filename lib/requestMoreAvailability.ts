@@ -1,6 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { generateToken } from "./token";
-import { sendEmail } from "./email";
+import { sendEmail, emailErrorReason } from "./email";
 
 type Interview = { id: string; candidate_name: string; position: string; panel: string[] };
 
@@ -28,7 +28,7 @@ export async function requestMoreAvailability(
 
   const businessDays = round * AVAILABILITY_ROUND_BUSINESS_DAYS;
 
-  const failed: string[] = [];
+  const failed: { name: string; reason: string }[] = [];
   for (const interviewer of panelInterviewers) {
     if (!interviewer.email) continue;
     const token = generateToken();
@@ -55,11 +55,12 @@ export async function requestMoreAvailability(
         `,
       );
       await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
-    } catch {
-      failed.push(interviewer.name);
+    } catch (e) {
+      failed.push({ name: interviewer.name, reason: emailErrorReason(e) });
     }
   }
 
+  const failedText = failed.map((f) => `${f.name}(사유: ${f.reason})`).join(", ");
   const baseNote = `면접관 전원 동시 가능 시간 없음 — 조회 기간을 영업일 ${businessDays}일로 넓혀 재문의함 (${round}차)`;
   await supabase
     .from("interviews")
@@ -67,13 +68,13 @@ export async function requestMoreAvailability(
       stage: "interviewer_pending",
       availability_round: round,
       note: failed.length
-        ? `${baseNote} / ⚠️ 발송 실패: ${failed.join(", ")} — 아래 "재발송" 버튼으로 다시 보내주세요`
+        ? `${baseNote} / ⚠️ 발송 실패: ${failedText} — 아래 "재발송" 버튼으로 다시 보내주세요`
         : baseNote,
     })
     .eq("id", interview.id);
 
   if (failed.length) {
-    return { ok: false, error: `다음 면접관에게 메일 발송 실패: ${failed.join(", ")}` };
+    return { ok: false, error: `다음 면접관에게 메일 발송 실패: ${failedText}` };
   }
   return { ok: true, sent: panelInterviewers.filter((p) => p.email).length };
 }

@@ -1,6 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { generateToken } from "./token";
-import { sendEmail } from "./email";
+import { sendEmail, emailErrorReason } from "./email";
 
 type Interview = { id: string; candidate_name: string; position: string; panel: string[] };
 
@@ -25,7 +25,7 @@ export async function sendInterviewerInvites(
 
   // 한 명 발송에 실패해도 나머지는 계속 보낸다 — 실패한 사람만 note에 남겨서
   // 리크루터가 면접관 관리 페이지에서 그 사람에게만 다시 보낼 수 있게 한다.
-  const failed: string[] = [];
+  const failed: { name: string; reason: string }[] = [];
   for (const interviewer of panelInterviewers) {
     const token = generateToken();
     await supabase.from("response_requests").insert({
@@ -50,23 +50,24 @@ export async function sendInterviewerInvites(
       // "응답을 아직 안 함"과 "애초에 메일이 안 감"을 구분할 수 있도록, 발송 성공
       // 여부 자체를 이 요청 행에 남긴다.
       await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
-    } catch {
-      failed.push(interviewer.name);
+    } catch (e) {
+      failed.push({ name: interviewer.name, reason: emailErrorReason(e) });
     }
   }
 
+  const failedText = failed.map((f) => `${f.name}(사유: ${f.reason})`).join(", ");
   await supabase
     .from("interviews")
     .update({
       stage: "interviewer_pending",
       ...(failed.length
-        ? { note: `⚠️ 면접관 초대 메일 발송 실패: ${failed.join(", ")} — 아래 "재발송" 버튼으로 다시 보내주세요` }
+        ? { note: `⚠️ 면접관 초대 메일 발송 실패: ${failedText} — 아래 "재발송" 버튼으로 다시 보내주세요` }
         : {}),
     })
     .eq("id", interview.id);
 
   if (failed.length) {
-    return { ok: false, error: `다음 면접관에게 메일 발송 실패: ${failed.join(", ")}` };
+    return { ok: false, error: `다음 면접관에게 메일 발송 실패: ${failedText}` };
   }
   return { ok: true, sent: panelInterviewers.length };
 }
