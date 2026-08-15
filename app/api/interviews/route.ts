@@ -16,7 +16,7 @@ export async function GET() {
   const { data: rooms } = await supabase.from("rooms").select("id,name");
   const { data: requests } = await supabase
     .from("response_requests")
-    .select("interview_id,interviewer_id,kind,status,created_at");
+    .select("interview_id,interviewer_id,kind,status,created_at,email_sent_at");
 
   const enriched = interviews.map((iv) => {
     const interviewerReqs =
@@ -29,10 +29,19 @@ export async function GET() {
     const panelDetail = (iv.panel as string[])
       .map((id) => interviewers?.find((p) => p.id === id))
       .filter(Boolean)
-      .map((p) => ({
-        ...p!,
-        responded: progress.respondedIds.has(p!.id),
-      }));
+      .map((p) => {
+        const forThis = interviewerReqs.filter((r) => r.interviewer_id === p!.id);
+        const latest = forThis.length
+          ? forThis.reduce((a, b) => (a.created_at > b.created_at ? a : b))
+          : null;
+        return {
+          ...p!,
+          responded: progress.respondedIds.has(p!.id),
+          // 대시보드 목록에서도 상세 페이지 안 열어보고 "응답 대기 중"과 "메일 발송
+          // 실패"를 바로 구분할 수 있게, 여기서도 최신 요청의 발송 성공 여부를 넘긴다.
+          emailSentAt: (latest as { email_sent_at?: string | null } | null)?.email_sent_at ?? null,
+        };
+      });
 
     return {
       ...iv,

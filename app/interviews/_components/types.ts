@@ -1,4 +1,10 @@
-export type InterviewerDetail = { id: string; name: string; role: string; responded: boolean };
+export type InterviewerDetail = {
+  id: string;
+  name: string;
+  role: string;
+  responded: boolean;
+  emailSentAt: string | null;
+};
 
 export type InterviewRow = {
   id: string;

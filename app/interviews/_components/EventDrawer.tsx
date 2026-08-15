@@ -51,7 +51,18 @@ export function EventDrawer({
 
         <dl className="flex flex-col gap-3 text-sm">
           <Row label="면접관">
-            {interview.panelDetail.map((p) => `${p.name}(${p.responded ? "✔" : "○"})`).join(", ")}
+            <span className="flex flex-wrap gap-x-1.5">
+              {interview.panelDetail.map((p, i) => {
+                const invitesSent = interview.stage !== "created";
+                const failed = invitesSent && !p.responded && !p.emailSentAt;
+                return (
+                  <span key={p.id} className={failed ? "text-destructive" : undefined}>
+                    {p.name}({p.responded ? "✔" : failed ? "⚠️" : "○"})
+                    {i < interview.panelDetail.length - 1 ? "," : ""}
+                  </span>
+                );
+              })}
+            </span>
           </Row>
           <Row label="면접 방식">{interview.interview_type}</Row>
           <Row label="회의실">{interview.roomName ?? "-"}</Row>

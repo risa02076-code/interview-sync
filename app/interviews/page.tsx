@@ -305,11 +305,15 @@ export default function InterviewsPage() {
                     </td>
                     <td className="p-3 text-xs">
                       <div className="flex flex-col gap-0.5">
-                        {iv.panelDetail.map((p) => (
-                          <span key={p.id} className="text-muted-foreground">
-                            {p.name} {p.responded ? "✔" : "○"}
-                          </span>
-                        ))}
+                        {iv.panelDetail.map((p) => {
+                          const invitesSent = iv.stage !== "created";
+                          const failed = invitesSent && !p.responded && !p.emailSentAt;
+                          return (
+                            <span key={p.id} className={failed ? "text-destructive" : "text-muted-foreground"}>
+                              {p.name} {p.responded ? "✔" : failed ? "⚠️ 발송 실패" : "○"}
+                            </span>
+                          );
+                        })}
                         <span className="mt-0.5 font-mono text-muted-foreground">
                           {iv.interviewerProgress.submitted}/{iv.interviewerProgress.total}
                         </span>
