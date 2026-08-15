@@ -34,6 +34,7 @@ export async function requestPriorityConfirmation(
     .join("<br/>");
 
   let sent = 0;
+  const failed: string[] = [];
   for (const interviewer of panelInterviewers) {
     if (!interviewer.email) continue;
     const token = generateToken();
@@ -49,21 +50,36 @@ export async function requestPriorityConfirmation(
     if (insErr) continue;
 
     const link = `${origin}/respond/${token}`;
-    await sendEmail(
-      interviewer.email,
-      `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 최종 면접 시간 확인 요청`,
-      `
-        <p>안녕하세요, ${interviewer.name}님.</p>
-        <p><b>${interview.candidate_name}</b>님(${interview.position})이 아래 순서로 면접 시간을 제안했습니다.</p>
-        <p>${list}</p>
-        <p>참석 가능한 시간을 모두 확인해주세요.</p>
-        <p><a href="${link}">${link}</a></p>
-      `,
-    );
-    sent += 1;
+    try {
+      await sendEmail(
+        interviewer.email,
+        `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 최종 면접 시간 확인 요청`,
+        `
+          <p>안녕하세요, ${interviewer.name}님.</p>
+          <p><b>${interview.candidate_name}</b>님(${interview.position})이 아래 순서로 면접 시간을 제안했습니다.</p>
+          <p>${list}</p>
+          <p>참석 가능한 시간을 모두 확인해주세요.</p>
+          <p><a href="${link}">${link}</a></p>
+        `,
+      );
+      sent += 1;
+    } catch {
+      failed.push(interviewer.name);
+    }
   }
 
-  await supabase.from("interviews").update({ stage: "priority_confirm_pending" }).eq("id", interview.id);
+  await supabase
+    .from("interviews")
+    .update({
+      stage: "priority_confirm_pending",
+      ...(failed.length
+        ? { note: `⚠️ 최종 확인 요청 메일 발송 실패: ${failed.join(", ")} — 다시 시도해주세요` }
+        : {}),
+    })
+    .eq("id", interview.id);
 
+  if (failed.length) {
+    return { ok: false, error: `다음 면접관에게 메일 발송 실패: ${failed.join(", ")}` };
+  }
   return { ok: true, sent };
 }

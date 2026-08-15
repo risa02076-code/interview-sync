@@ -31,15 +31,19 @@ export async function POST(request: Request, { params }: Params) {
   const origin = new URL(request.url).origin;
   const link = `${origin}/respond/${token}`;
 
-  await sendEmail(
-    interviewer.email,
-    `[인터뷰싱크] 면접 불가능한 시간을 알려주세요`,
-    `
-      <p>안녕하세요, ${interviewer.name}님.</p>
-      <p>아래 링크의 30분 단위 캘린더에서 면접이 <b>불가능한</b> 시간을 모두 선택해주세요.</p>
-      <p><a href="${link}">${link}</a></p>
-    `,
-  );
+  try {
+    await sendEmail(
+      interviewer.email,
+      `[인터뷰싱크] 면접 불가능한 시간을 알려주세요`,
+      `
+        <p>안녕하세요, ${interviewer.name}님.</p>
+        <p>아래 링크의 30분 단위 캘린더에서 면접이 <b>불가능한</b> 시간을 모두 선택해주세요.</p>
+        <p><a href="${link}">${link}</a></p>
+      `,
+    );
+  } catch {
+    return NextResponse.json({ error: "메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요." }, { status: 502 });
+  }
 
   return NextResponse.json({ ok: true });
 }

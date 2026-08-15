@@ -235,6 +235,23 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
+  async function handleReinviteInterviewer(interviewerId: string, name: string) {
+    setBusy(true);
+    const res = await fetch(`/api/interviews/${id}/reinvite-interviewer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interviewerId }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      setToast(`${name}님에게 이 케이스로 다시 발송했습니다.`);
+      load();
+    } else {
+      const body = await res.json();
+      setToast(body.error ?? "재발송에 실패했습니다.");
+    }
+  }
+
   async function handleDelete() {
     if (!confirm("이 면접 케이스를 삭제할까요?")) return;
     const res = await fetch(`/api/interviews/${id}`, { method: "DELETE" });
@@ -279,19 +296,31 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
         <p className="text-sm font-semibold">면접 패널 응답 현황</p>
         <div className="flex flex-wrap gap-1.5">
           {interview.panelDetail.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => setExpandedPanelId((cur) => (cur === p.id ? null : p.id))}
-              className="text-left"
-            >
-              <Badge variant="outline" className="font-normal">
-                {p.name} · {p.role} {p.responded ? "✔" : "○"}
-                {p.responded && formatRespondedAt(p.respondedAt) && (
-                  <span className="text-muted-foreground"> ({formatRespondedAt(p.respondedAt)} 응답)</span>
-                )}
-              </Badge>
-            </button>
+            <div key={p.id} className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setExpandedPanelId((cur) => (cur === p.id ? null : p.id))}
+                className="text-left"
+              >
+                <Badge variant="outline" className="font-normal">
+                  {p.name} · {p.role} {p.responded ? "✔" : "○"}
+                  {p.responded && formatRespondedAt(p.respondedAt) && (
+                    <span className="text-muted-foreground"> ({formatRespondedAt(p.respondedAt)} 응답)</span>
+                  )}
+                </Badge>
+              </button>
+              {!p.responded && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => handleReinviteInterviewer(p.id, p.name)}
+                  className="text-xs text-primary underline disabled:opacity-40"
+                  title="이 케이스에 연결된 새 링크로 다시 발송합니다"
+                >
+                  재발송
+                </button>
+              )}
+            </div>
           ))}
         </div>
         {expandedPanelId && (
