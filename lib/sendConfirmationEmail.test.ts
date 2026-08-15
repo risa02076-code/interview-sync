@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { sendConfirmationEmail } from "./sendConfirmationEmail";
 import { sendEmail } from "./email";
+import { formatSlotLabel } from "./slots";
 
 vi.mock("./email", () => ({
   sendEmail: vi.fn(),
@@ -77,6 +78,14 @@ describe("sendConfirmationEmail", () => {
     expect(result.ok).toBe(true);
     expect(updateCalls.some((c) => "confirmation_sent_at" in c.payload)).toBe(true);
     expect(updateCalls.some((c) => "note" in c.payload)).toBe(false);
+
+    // 확정 메일에 실제로 맞는 후보자 이름·시간이 들어갔는지 확인한다 — 가장 위험한
+    // 메일이라 발송 성공 여부만이 아니라 내용도 틀리면 안 된다.
+    const [to, subject, html] = vi.mocked(sendEmail).mock.calls[0];
+    expect(to).toBe(baseInterview.candidate_email);
+    expect(subject).toContain(baseInterview.candidate_name);
+    expect(html).toContain(formatSlotLabel(baseInterview.matched_slot));
+    expect(html).toContain(baseInterview.interview_type);
   });
 
   it("이미 확정 메일을 보낸 케이스는 재발송하지 않는다", async () => {

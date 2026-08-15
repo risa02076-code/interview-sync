@@ -72,6 +72,14 @@ describe("sendCandidateInvite", () => {
     expect(stageUpdate?.payload.stage).toBe("candidate_pending");
     expect(stageUpdate?.payload.recommended_slots).toBeDefined();
     expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);
+
+    // 코드 버그로 수신자·이름·링크가 잘못 들어가면 SMTP는 성공해도 실제로는 잘못된
+    // 메일이 나간 것이다 — 발송 자체 성공 여부만이 아니라 내용도 검증해야 한다.
+    const [to, subject, html] = vi.mocked(sendEmail).mock.calls[0];
+    expect(to).toBe(interview.candidate_email);
+    expect(subject).toContain(interview.position);
+    expect(html).toContain(interview.candidate_name);
+    expect(html).toContain("http://localhost:3000/respond/");
   });
 
   it("후보자 이메일이 없으면 발송 시도 없이 바로 실패를 반환한다", async () => {

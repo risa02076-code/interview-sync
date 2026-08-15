@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { requestPriorityConfirmation } from "./requestPriorityConfirmation";
 import { sendEmail } from "./email";
+import { formatSlotLabel } from "./slots";
 
 vi.mock("./email", () => ({
   sendEmail: vi.fn(),
@@ -70,5 +71,11 @@ describe("requestPriorityConfirmation", () => {
 
     expect(result).toEqual({ ok: true, sent: 1 });
     expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);
+
+    // 후보자가 제출한 순위 목록이 실제 메일 본문에도 정확히 반영되는지 확인한다.
+    const [to, , html] = vi.mocked(sendEmail).mock.calls[0];
+    expect(to).toBe("a@example.com");
+    expect(html).toContain(formatSlotLabel(interview.preferred_slots[0]));
+    expect(html).toContain(interview.candidate_name);
   });
 });

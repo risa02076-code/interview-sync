@@ -79,6 +79,18 @@
     OOO(사유: No recipients defined)". 존재하지 않는 이메일 주소로 실제 발송을 실패시켜
     (DB 직접 조작이 아니라 진짜 SMTP 실패) note에 사유가 정상적으로 남는 것까지
     확인했다.
+- **외부 헬스체크용 엔드포인트** (`app/api/health/route.ts`) — 지금까지의 발송 실패
+  가시화는 전부 "사람이 버튼을 누른 순간"에만 보이는데, 새벽에 도는 Cron이나 앱 전체가
+  죽는 건 그 순간 지켜보는 사람이 없어서 아무도 모른다는 문제가 있었다. 이 엔드포인트는
+  단순히 페이지가 열리는지가 아니라 실제로 Supabase DB에 접근 가능한지까지 확인해서,
+  UptimeRobot 같은 무료 외부 모니터링 서비스가 주기적으로 호출해 장애를 감지하고
+  알림을 보낼 수 있게 한다(외부 서비스 가입·설정은 사용자가 직접 해야 함 — 아래
+  "비상시 대응 방법" 참고).
+- **이메일 발송 함수 테스트에 본문 내용 검증 추가** — 기존 테스트는 발송 성공/실패
+  여부(stage·note·email_sent_at)만 검증해서, "SMTP는 성공했는데 코드 버그로 후보자
+  이름이나 링크, 날짜가 잘못 들어간 경우"는 전혀 못 잡았다. 각 발송 함수 테스트에
+  실제 `sendEmail` 호출 인자(수신자·제목·본문)를 검사하는 assertion을 추가해서,
+  내용 자체가 틀리면 테스트가 실패하도록 했다.
 
 ## 알려진 한계 (실무 도입 전 반드시 해결해야 함)
 
@@ -118,16 +130,24 @@ Vercel(앱)과 Supabase(데이터)는 완전히 별개의 서비스라, 앱이 �
   현재는 Supabase 로그인 권한이 없어 불가능. 계정 비밀번호를 공유하지 말고,
   Supabase의 팀원 초대 기능으로 **읽기 전용 권한**을 별도로 부여할 것(아직 미설정 —
   1인 운영 중이라 필요 시 설정).
+- **앱 전체가 죽었는데 아무도 모르는 상황을 막으려면** → `/api/health`
+  (`https://interview-sync-nu.vercel.app/api/health`)를 [UptimeRobot](https://uptimerobot.com)
+  같은 무료 서비스에 등록해서 몇 분 간격으로 핑하게 하고, 실패 시 이메일/문자로
+  알림을 받도록 설정할 것 — 계정 가입과 모니터 등록은 개발자 본인이 직접 해야 하는
+  절차라 아직 미설정 상태(엔드포인트 자체는 준비됨).
 
 ## 다음 단계 (우선순위 순)
 
-1. 확정 메일(`sendConfirmationEmail`)은 후보자·면접관 중 일부만 실패해도 전체를 다시
+1. **UptimeRobot(또는 유사 서비스)에 `/api/health` 등록** — 위 "비상시 대응 방법"
+   참고. 코드는 준비됐고, 외부 서비스 가입·모니터 등록·알림 수신처(이메일/전화번호)
+   설정만 남음.
+2. 확정 메일(`sendConfirmationEmail`)은 후보자·면접관 중 일부만 실패해도 전체를 다시
    보내는 방식이다(이미 성공한 사람도 중복 수신) — 수신자별로 성공 여부를 따로 기록해서
    실패한 사람에게만 재발송하도록 세분화하면 더 낫다. 지금은 위험하지 않은 사소한
    비효율이라 우선순위를 낮춰뒀다.
-2. Supabase에 `interviewers_readable`, `response_requests_readable` 뷰 추가(선택 — 개발자
+3. Supabase에 `interviewers_readable`, `response_requests_readable` 뷰 추가(선택 — 개발자
    본인의 디버깅 편의용, 포트폴리오 완성도와는 무관)
-3. (실무 도입 시) Supabase Auth 붙이기, Gmail → AWS SES 전환
+4. (실무 도입 시) Supabase Auth 붙이기, Gmail → AWS SES 전환
 
 ## 검증 방법
 
@@ -140,6 +160,9 @@ npm test             # Vitest — lib/matching.ts, lib/interviewerProgress.ts, l
 # 아래는 로컬 dev 서버 + 실제 Supabase가 필요한 수동 통합 검증 (scripts/README.md 참고)
 node scripts/verify-reschedule-flow.js
 node scripts/verify-wide-availability-flow.js
+
+# 헬스체크 엔드포인트가 실제 DB 연결까지 확인하는지
+curl http://localhost:3000/api/health
 ```
 
 핵심 매칭·확정 로직, 진행률 계산, 상태 파생 로직은 단위 테스트로 커버된다. 여러 API

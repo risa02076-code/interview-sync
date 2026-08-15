@@ -64,5 +64,10 @@ describe("requestMoreAvailability", () => {
     const noteUpdate = updateCalls.find((c) => "note" in c.payload);
     expect(noteUpdate?.payload.note).not.toContain("⚠️");
     expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);
+
+    // 넓힌 조회 기간(영업일 수)이 실제 메일 본문에도 맞게 반영되는지 확인한다.
+    const [, , html] = vi.mocked(sendEmail).mock.calls[0];
+    expect(html).toContain("영업일 5일");
+    expect(html).toContain("http://localhost:3000/respond/");
   });
 });

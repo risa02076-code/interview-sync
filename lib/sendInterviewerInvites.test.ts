@@ -68,5 +68,12 @@ describe("sendInterviewerInvites", () => {
     expect(result.ok).toBe(true);
     expect(updateCalls.some((c) => "note" in c.payload)).toBe(false);
     expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);
+
+    // 발송 자체 성공만이 아니라, 실제로 맞는 사람에게 맞는 내용이 나갔는지도 검증한다.
+    const [to, subject, html] = vi.mocked(sendEmail).mock.calls[0];
+    expect(to).toBe("a@example.com");
+    expect(subject).toContain(interview.candidate_name);
+    expect(html).toContain(interview.candidate_name);
+    expect(html).toContain("http://localhost:3000/respond/");
   });
 });
