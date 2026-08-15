@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,17 @@ type InterviewerRow = {
 };
 
 export default function InterviewersPage() {
+  return (
+    <Suspense fallback={<p className="p-6 text-sm text-muted-foreground">불러오는 중...</p>}>
+      <InterviewersPageContent />
+    </Suspense>
+  );
+}
+
+// useSearchParams()를 쓰는 컴포넌트는 Suspense로 감싸야 프로덕션 빌드(next build)가
+// 정적 페이지를 미리 렌더링할 수 있다 — 로컬 dev 서버에서는 안 걸리지만 실제 배포
+// 빌드에서만 실패하는 문제라 놓치기 쉽다.
+function InterviewersPageContent() {
   const searchParams = useSearchParams();
   // 면접 상세 페이지의 "이메일 수정" 링크로 들어오면, 그 면접관 카드로 스크롤하고
   // 눈에 띄게 표시해서 여러 명 중에 어떤 사람을 고쳐야 하는지 바로 알 수 있게 한다.
