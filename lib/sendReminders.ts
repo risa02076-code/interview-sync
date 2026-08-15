@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { sendEmail } from "./email";
+import { sendEmail, emailErrorReason } from "./email";
 import { formatSlotLabel } from "./slots";
 
 /** 응답이 없을 때 며칠 뒤 처음 독촉할지 */
@@ -67,6 +67,10 @@ export async function sendPendingResponseReminders(
 
   let sent = 0;
   const errors: string[] = [];
+  // 크론은 여러 케이스를 한 번에 처리하므로, 실패를 케이스별로 모아뒀다가 각 케이스의
+  // note에 남긴다 — 이게 없으면 리마인더 발송 실패는 대시보드 어디에도 안 보이고
+  // 크론의 HTTP 응답(아무도 안 보는)에만 남는다.
+  const failedByInterview = new Map<string, string[]>();
 
   for (const req of due) {
     const interview = interviews?.find((iv) => iv.id === req.interview_id);
@@ -106,13 +110,33 @@ export async function sendPendingResponseReminders(
       await sendEmail(to, subject, body);
       await supabase
         .from("response_requests")
-        .update({ reminded_at: new Date().toISOString(), reminder_count: nth })
+        .update({
+          reminded_at: new Date().toISOString(),
+          reminder_count: nth,
+          email_sent_at: new Date().toISOString(),
+        })
         .eq("id", req.id);
       sent += 1;
     } catch (e) {
-      // 한 건이 실패해도 나머지는 계속 보낸다
-      errors.push(`${name ?? req.token}: ${e instanceof Error ? e.message : String(e)}`);
+      // 한 건이 실패해도 나머지는 계속 보낸다. reminded_at/reminder_count를 안
+      // 올렸으니 다음 크론 실행 때 자동으로 다시 시도된다.
+      const reason = emailErrorReason(e);
+      errors.push(`${name ?? req.token}: ${reason}`);
+      if (req.interview_id) {
+        const list = failedByInterview.get(req.interview_id) ?? [];
+        list.push(`${name ?? req.token}(사유: ${reason})`);
+        failedByInterview.set(req.interview_id, list);
+      }
     }
+  }
+
+  for (const [interviewId, names] of failedByInterview) {
+    await supabase
+      .from("interviews")
+      .update({
+        note: `⚠️ 독촉 메일 발송 실패: ${names.join(", ")} — 다음 리마인더 발송 때 자동으로 다시 시도됩니다`,
+      })
+      .eq("id", interviewId);
   }
 
   return { sent, skipped: all.length - due.length, errors };
@@ -176,22 +200,41 @@ export async function sendDayBeforeReminders(
       <p>면접관: ${panel.map((p) => p.name).join(", ") || "-"}</p>
     `;
 
-    try {
-      for (const to of recipients) {
+    // 한 명에게 실패해도 나머지 수신자에게는 계속 보낸다(면접이 내일이라 한 명이라도
+    // 더 받는 게 낫다) — 실패자만 모아서 케이스 note에 남긴다.
+    const failedRecipients: string[] = [];
+    for (const to of recipients) {
+      try {
         await sendEmail(
           to,
           `[인터뷰싱크] 내일 면접 안내 - ${iv.candidate_name}(${iv.position})`,
           body,
         );
+      } catch (e) {
+        failedRecipients.push(`${to}(사유: ${emailErrorReason(e)})`);
       }
-      await supabase
-        .from("interviews")
-        .update({ day_before_reminded_at: new Date().toISOString() })
-        .eq("id", iv.id);
-      sent += 1;
-    } catch (e) {
-      errors.push(`${iv.candidate_name}: ${e instanceof Error ? e.message : String(e)}`);
     }
+
+    if (failedRecipients.length) {
+      errors.push(`${iv.candidate_name}: ${failedRecipients.join(", ")}`);
+    } else {
+      sent += 1;
+    }
+
+    // 시간대 자체가 "내일"에만 해당하므로 오늘 실패해도 내일 다시 시도할 기회가 없다
+    // (그때는 이미 면접 당일이라 이 함수의 대상에서 빠짐) — 그래서 부분 실패여도
+    // day_before_reminded_at은 그대로 남겨 반복 발송을 막고, 대신 note로 즉시 알린다.
+    await supabase
+      .from("interviews")
+      .update({
+        day_before_reminded_at: new Date().toISOString(),
+        ...(failedRecipients.length
+          ? {
+              note: `⚠️ 전날 리마인더 발송 실패: ${failedRecipients.join(", ")} — 자동 재시도가 없으니 직접 연락해주세요`,
+            }
+          : {}),
+      })
+      .eq("id", iv.id);
   }
 
   return { sent, skipped: all.length - due.length, errors };
