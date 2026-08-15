@@ -63,20 +63,30 @@ export async function sendCandidateInvite(
   // 후보자에게 이메일 본문에서 전체 시간 목록을 죽 나열하지 않는다 — 링크를 열면
   // 어차피 같은 목록을 날짜별로 훨씬 보기 좋게 보여준다. 시간이 하나뿐일 때만
   // 클릭 전에 바로 알 수 있게 본문에 간단히 언급한다.
-  await sendEmail(
-    interview.candidate_email,
-    `[인터뷰싱크] ${interview.position} 면접 일정을 제안드립니다`,
-    `
-      <p>안녕하세요, ${interview.candidate_name}님.</p>
-      <p><b>${interview.position}</b> 면접(${interview.interview_type}) ${
-        isSingle
-          ? `일정을 <b>${whenList[0]}</b>로 제안드립니다.`
-          : "가능한 시간을 안내드립니다."
-      }</p>
-      <p>아래 링크에서 ${isSingle ? "확인 후 확정해주세요." : "편한 시간을 선택해 확정해주세요."}</p>
-      <p><a href="${link}">${link}</a></p>
-    `,
-  );
+  try {
+    await sendEmail(
+      interview.candidate_email,
+      `[인터뷰싱크] ${interview.position} 면접 일정을 제안드립니다`,
+      `
+        <p>안녕하세요, ${interview.candidate_name}님.</p>
+        <p><b>${interview.position}</b> 면접(${interview.interview_type}) ${
+          isSingle
+            ? `일정을 <b>${whenList[0]}</b>로 제안드립니다.`
+            : "가능한 시간을 안내드립니다."
+        }</p>
+        <p>아래 링크에서 ${isSingle ? "확인 후 확정해주세요." : "편한 시간을 선택해 확정해주세요."}</p>
+        <p><a href="${link}">${link}</a></p>
+      `,
+    );
+  } catch {
+    // 메일이 실제로 안 나갔는데 stage를 candidate_pending으로 넘기면 "후보자 응답
+    // 대기 중"이라고 잘못 표시된다 — 그러니 stage는 건드리지 않고 실패만 남긴다.
+    await supabase
+      .from("interviews")
+      .update({ note: `⚠️ 후보자 초대 메일 발송 실패(${interview.candidate_email}) — 다시 시도해주세요` })
+      .eq("id", interview.id);
+    return { ok: false, error: "후보자에게 메일 발송에 실패했습니다." };
+  }
 
   // 제안 시점의 시간들을 고정해서 저장해둔다. 후보자가 링크를 다시 열어봐도(면접관
   // 가용 시간이 그 사이 바뀌었더라도) 처음 안내받은 시간과 동일한 목록을 보게 하기 위함.

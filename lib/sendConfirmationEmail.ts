@@ -60,29 +60,50 @@ export async function sendConfirmationEmail(
     rescheduleLink = `${origin}/respond/${token}`;
   }
 
+  // 가장 위험한 메일(최종 확정)이라, 하나라도 실패하면 절대 조용히 넘기지 않는다.
+  // 실패한 수신자를 note에 남겨 대시보드에 바로 보이게 하고, confirmation_sent_at은
+  // 설정하지 않아 "확정 메일 발송" 버튼이 그대로 남아 재시도할 수 있게 한다.
+  const failed: string[] = [];
+
   if (interview.candidate_email) {
-    await sendEmail(
-      interview.candidate_email,
-      `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 면접 일정이 확정되었습니다`,
-      `
-        <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 일정이 아래와 같이 확정되었습니다.</p>
-        <p><b>${when}</b> · ${roomName}</p>
-        <p style="color:#888;font-size:12px">이 시간에 참석이 어려우시거나 문제가 있으면 리크루터에게 알려주세요.</p>
-        ${rescheduleLink ? `<p><a href="${rescheduleLink}">일정 변경이 필요하신가요? 여기를 클릭해주세요</a></p>` : ""}
-      `,
-    );
+    try {
+      await sendEmail(
+        interview.candidate_email,
+        `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 면접 일정이 확정되었습니다`,
+        `
+          <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 일정이 아래와 같이 확정되었습니다.</p>
+          <p><b>${when}</b> · ${roomName}</p>
+          <p style="color:#888;font-size:12px">이 시간에 참석이 어려우시거나 문제가 있으면 리크루터에게 알려주세요.</p>
+          ${rescheduleLink ? `<p><a href="${rescheduleLink}">일정 변경이 필요하신가요? 여기를 클릭해주세요</a></p>` : ""}
+        `,
+      );
+    } catch {
+      failed.push(`후보자(${interview.candidate_email})`);
+    }
   }
 
   for (const to of panelEmails) {
-    await sendEmail(
-      to,
-      `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 면접 일정이 확정되었습니다`,
-      `
-        <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 일정이 아래와 같이 확정되었습니다.</p>
-        <p><b>${when}</b> · ${roomName}</p>
-        <p style="color:#888;font-size:12px">이 시간에 참석이 어려우시거나 문제가 있으면 리크루터에게 알려주세요.</p>
-      `,
-    );
+    try {
+      await sendEmail(
+        to,
+        `[인터뷰싱크] ${interview.candidate_name}(${interview.position}) 면접 일정이 확정되었습니다`,
+        `
+          <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 일정이 아래와 같이 확정되었습니다.</p>
+          <p><b>${when}</b> · ${roomName}</p>
+          <p style="color:#888;font-size:12px">이 시간에 참석이 어려우시거나 문제가 있으면 리크루터에게 알려주세요.</p>
+        `,
+      );
+    } catch {
+      failed.push(`면접관(${to})`);
+    }
+  }
+
+  if (failed.length) {
+    await supabase
+      .from("interviews")
+      .update({ note: `⚠️ 확정 메일 발송 실패: ${failed.join(", ")} — "확정 메일 발송"을 다시 눌러주세요` })
+      .eq("id", interview.id);
+    return { ok: false, error: `다음 수신자에게 발송 실패: ${failed.join(", ")}` };
   }
 
   await supabase

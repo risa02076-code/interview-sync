@@ -291,8 +291,16 @@ export default function InterviewsPage() {
                       >
                         {meta.emoji} {meta.label}
                       </span>
-                      {iv.status === "escalated" && iv.note && (
-                        <p className="mt-1 max-w-[16rem] text-xs text-destructive">{iv.note}</p>
+                      {iv.note && (
+                        <p
+                          className={`mt-1 max-w-[16rem] text-xs ${
+                            iv.status === "escalated" || iv.note.includes("⚠️")
+                              ? "text-destructive"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          {iv.note}
+                        </p>
                       )}
                     </td>
                     <td className="p-3 text-xs">

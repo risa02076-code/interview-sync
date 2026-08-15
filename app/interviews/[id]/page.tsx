@@ -516,7 +516,17 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      {interview.note && <p className="text-sm text-destructive">{interview.note}</p>}
+      {interview.note && (
+        <p
+          className={`text-sm ${
+            interview.status === "escalated" || interview.note.includes("⚠️")
+              ? "text-destructive"
+              : "text-muted-foreground"
+          }`}
+        >
+          {interview.note}
+        </p>
+      )}
       {toast && <p className="text-sm text-primary">{toast}</p>}
 
       <div className="flex flex-wrap gap-2">
