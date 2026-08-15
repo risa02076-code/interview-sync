@@ -83,7 +83,9 @@ export async function sendCandidateInvite(
     // 대기 중"이라고 잘못 표시된다 — 그러니 stage는 건드리지 않고 실패만 남긴다.
     await supabase
       .from("interviews")
-      .update({ note: `⚠️ 후보자 초대 메일 발송 실패(${interview.candidate_email}) — 다시 시도해주세요` })
+      .update({
+        note: `⚠️ 후보자 초대 메일 발송 실패(${interview.candidate_email}) — "후보자에게 이메일 발송" 버튼을 다시 눌러주세요`,
+      })
       .eq("id", interview.id);
     return { ok: false, error: "후보자에게 메일 발송에 실패했습니다." };
   }

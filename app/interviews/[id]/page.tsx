@@ -252,6 +252,23 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
+  async function handleReinvitePriorityConfirm(interviewerId: string, name: string) {
+    setBusy(true);
+    const res = await fetch(`/api/interviews/${id}/reinvite-priority-confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interviewerId }),
+    });
+    setBusy(false);
+    if (res.ok) {
+      setToast(`${name}님에게 최종 확인 요청을 다시 보냈습니다.`);
+      load();
+    } else {
+      const body = await res.json();
+      setToast(body.error ?? "재발송에 실패했습니다.");
+    }
+  }
+
   async function handleDelete() {
     if (!confirm("이 면접 케이스를 삭제할까요?")) return;
     const res = await fetch(`/api/interviews/${id}`, { method: "DELETE" });
@@ -387,6 +404,19 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
                       {p.priorityConfirm?.submitted_at && (
                         <div className="font-normal">
                           ({formatRespondedAt(p.priorityConfirm.submitted_at)} 확인)
+                        </div>
+                      )}
+                      {interview.status === "pending" && p.priorityConfirm?.status !== "submitted" && (
+                        <div>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => handleReinvitePriorityConfirm(p.id, p.name)}
+                            className="font-normal text-primary underline disabled:opacity-40"
+                            title="이 순위 목록으로 최종 확인을 다시 요청합니다"
+                          >
+                            재발송
+                          </button>
                         </div>
                       )}
                     </th>

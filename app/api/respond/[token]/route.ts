@@ -7,6 +7,7 @@ import { recommendLeastConflictSlots, requiresRoom } from "@/lib/matching";
 import { requestMoreAvailability, MAX_AVAILABILITY_ROUNDS } from "@/lib/requestMoreAvailability";
 import { requestPriorityConfirmation } from "@/lib/requestPriorityConfirmation";
 import { confirmFromPriorities } from "@/lib/confirmFromPriorities";
+import { computeInterviewerProgress } from "@/lib/interviewerProgress";
 
 type Params = { params: Promise<{ token: string }> };
 
@@ -401,38 +402,43 @@ export async function POST(request: Request, { params }: Params) {
   // 실제로 있는지부터 확인한다. 없으면 후보자에게는 절대 안내하지 않고, 조회 기간을
   // 넓혀 면접관 전원에게 다시 문의한다(상한 넘으면 리크루터에게 에스컬레이션).
   if (reqRow.kind === "interviewer" && reqRow.interview_id) {
-    const { data: allRequests } = await supabase
-      .from("response_requests")
-      .select("id, status")
-      .eq("interview_id", reqRow.interview_id)
-      .eq("kind", "interviewer");
-    const allDone = allRequests?.every((r) => r.status === "submitted");
+    const { data: interview } = await supabase
+      .from("interviews")
+      .select("*")
+      .eq("id", reqRow.interview_id)
+      .single();
 
-    // 이 기간엔 전부 불가능하다고 표시했으면, 이 기간 안에서는 이미 매칭이 불가능하다는
-    // 게 확정이므로 다른 면접관 응답을 기다리지 않고 곧바로 재문의 단계로 넘어간다.
-    // 아직 대기 중인 다른 요청은 이번 라운드에서는 더 의미가 없으니 함께 정리해둔다.
-    if (!allDone && allUnavailable) {
-      const stillPending = (allRequests ?? []).filter((r) => r.status === "pending").map((r) => r.id);
-      if (stillPending.length) {
-        await supabase
-          .from("response_requests")
-          .update({ status: "submitted", submitted_at: new Date().toISOString() })
-          .in("id", stillPending);
+    if (interview) {
+      const { data: allRequests } = await supabase
+        .from("response_requests")
+        .select("id,interviewer_id,status,created_at")
+        .eq("interview_id", reqRow.interview_id)
+        .eq("kind", "interviewer");
+
+      // "재발송"으로 같은 면접관에게 새 토큰을 또 만들 수 있어서, 발송 실패로 방치된
+      // 예전 pending 행이 남아있을 수 있다 — 전체 행이 아니라 면접관별 최신 요청
+      // 기준으로 판단해야 한다(interviewerProgress와 동일한 이유).
+      const progress = computeInterviewerProgress((interview.panel as string[]) ?? [], allRequests ?? []);
+      const allDone = progress.total > 0 && progress.submitted === progress.total;
+
+      // 이 기간엔 전부 불가능하다고 표시했으면, 이 기간 안에서는 이미 매칭이 불가능하다는
+      // 게 확정이므로 다른 면접관 응답을 기다리지 않고 곧바로 재문의 단계로 넘어간다.
+      // 아직 대기 중인 다른 요청은 이번 라운드에서는 더 의미가 없으니 함께 정리해둔다.
+      if (!allDone && allUnavailable) {
+        const stillPending = (allRequests ?? []).filter((r) => r.status === "pending").map((r) => r.id);
+        if (stillPending.length) {
+          await supabase
+            .from("response_requests")
+            .update({ status: "submitted", submitted_at: new Date().toISOString() })
+            .in("id", stillPending);
+        }
       }
-    }
-
-    if (allDone || allUnavailable) {
-      const { data: interview } = await supabase
-        .from("interviews")
-        .select("*")
-        .eq("id", reqRow.interview_id)
-        .single();
 
       // 면접관 링크를 재사용할 수 있게 되면서, 이미 후보자에게 안내가 나갔거나 후보자가
       // 순위를 제출한 뒤에도 면접관이 캘린더를 다시 고쳐 제출할 수 있다. 그 경우 busy_slots는
       // 갱신하되, 이미 지난 단계(candidate_pending/candidate_done 등)를 되돌리거나 후보자에게
       // 또 초대 메일을 보내지는 않는다 — 딱 면접관 응답을 다 모으는 단계에서만 다음으로 넘어간다.
-      if (interview && interview.stage === "interviewer_pending") {
+      if ((allDone || allUnavailable) && interview.stage === "interviewer_pending") {
         const { data: panelInterviewers } = await supabase
           .from("interviewers")
           .select("*")
@@ -477,20 +483,26 @@ export async function POST(request: Request, { params }: Params) {
   // 순위로 자동 확정한다. 이미 확정·에스컬레이션된 뒤(늦게 다시 고쳐 제출한 경우)라면
   // 다시 실행하지 않는다.
   if (reqRow.kind === "priority_confirm" && reqRow.interview_id) {
-    const { data: allConfirmRequests } = await supabase
-      .from("response_requests")
-      .select("status")
-      .eq("interview_id", reqRow.interview_id)
-      .eq("kind", "priority_confirm");
-    const allDone = allConfirmRequests?.every((r) => r.status === "submitted");
+    const { data: interview } = await supabase
+      .from("interviews")
+      .select("*")
+      .eq("id", reqRow.interview_id)
+      .single();
 
-    if (allDone) {
-      const { data: interview } = await supabase
-        .from("interviews")
-        .select("*")
-        .eq("id", reqRow.interview_id)
-        .single();
-      if (interview && interview.status === "pending") {
+    if (interview) {
+      // "재발송"으로 같은 면접관에게 새 토큰을 또 만들 수 있어서, 예전(발송 실패로
+      // 아무도 못 받은) 요청이 pending으로 방치될 수 있다 — 단순히 모든 행이
+      // submitted인지가 아니라, 면접관별 최신 요청 기준으로 판단해야 한다
+      // (interviewerProgress와 동일한 이유).
+      const { data: allConfirmRequests } = await supabase
+        .from("response_requests")
+        .select("interviewer_id,status,created_at")
+        .eq("interview_id", reqRow.interview_id)
+        .eq("kind", "priority_confirm");
+      const progress = computeInterviewerProgress((interview.panel as string[]) ?? [], allConfirmRequests ?? []);
+      const allDone = progress.total > 0 && progress.submitted === progress.total;
+
+      if (allDone && interview.status === "pending") {
         await confirmFromPriorities(supabase, interview);
       }
     }

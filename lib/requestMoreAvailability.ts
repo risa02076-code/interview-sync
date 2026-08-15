@@ -65,7 +65,9 @@ export async function requestMoreAvailability(
     .update({
       stage: "interviewer_pending",
       availability_round: round,
-      note: failed.length ? `${baseNote} / ⚠️ 발송 실패: ${failed.join(", ")} — 다시 시도해주세요` : baseNote,
+      note: failed.length
+        ? `${baseNote} / ⚠️ 발송 실패: ${failed.join(", ")} — 아래 "재발송" 버튼으로 다시 보내주세요`
+        : baseNote,
     })
     .eq("id", interview.id);
 

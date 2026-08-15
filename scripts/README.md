@@ -16,6 +16,7 @@ DB가 있어야 하므로 CI에서 자동으로 돌지 않고, 수동으로 실�
 ```bash
 node scripts/verify-reschedule-flow.js
 node scripts/verify-wide-availability-flow.js
+node scripts/verify-priority-confirm-resend.js
 ```
 
 ## 무엇을 검증하는지
@@ -27,6 +28,9 @@ node scripts/verify-wide-availability-flow.js
   응답 링크가 "다음 주 가능 시간 체크" 단계로 전환되고, 체크한 시간이 면접관 전원에게
   정확히 재확인 요청되는지, 그리고 그래도 안 된다며 자유 입력(가능 시점/사유)을 보내면
   리크루터 에스컬레이션으로 이어지고 대시보드에 노출되는지 검증한다.
+- **verify-priority-confirm-resend.js**: 발송 실패로 방치된 예전 요청(pending)이 있어도,
+  "재발송"으로 만든 최신 요청에 전원이 답하면 자동 확정이 정상적으로 되는지 검증한다
+  (면접관별 최신 요청 기준 판단 로직의 회귀 테스트).
 
 각 스크립트는 `__검증__`류 이름의 테스트용 면접 케이스를 만들어 실행하고, 끝나면
 스스로 정리(삭제)한다. 실행 중 실패하면(assert 실패) 어떤 조건이 깨졌는지 콘솔에 표시된다.

@@ -57,7 +57,7 @@ export async function sendInterviewerInvites(
     .update({
       stage: "interviewer_pending",
       ...(failed.length
-        ? { note: `⚠️ 면접관 초대 메일 발송 실패: ${failed.join(", ")} — 면접관 관리 페이지에서 다시 보내주세요` }
+        ? { note: `⚠️ 면접관 초대 메일 발송 실패: ${failed.join(", ")} — 아래 "재발송" 버튼으로 다시 보내주세요` }
         : {}),
     })
     .eq("id", interview.id);

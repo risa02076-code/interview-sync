@@ -16,7 +16,7 @@ export async function GET() {
   const { data: rooms } = await supabase.from("rooms").select("id,name");
   const { data: requests } = await supabase
     .from("response_requests")
-    .select("interview_id,interviewer_id,kind,status");
+    .select("interview_id,interviewer_id,kind,status,created_at");
 
   const enriched = interviews.map((iv) => {
     const interviewerReqs =
