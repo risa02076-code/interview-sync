@@ -491,7 +491,7 @@ export async function POST(request: Request, { params }: Params) {
         .eq("id", reqRow.interview_id)
         .single();
       if (interview && interview.status === "pending") {
-        await confirmFromPriorities(supabase, interview, new URL(request.url).origin);
+        await confirmFromPriorities(supabase, interview);
       }
     }
   }

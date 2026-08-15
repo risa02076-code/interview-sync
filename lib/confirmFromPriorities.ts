@@ -1,6 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { matchAndPersist } from "./applyMatch";
-import { sendConfirmationEmail } from "./sendConfirmationEmail";
 
 type Interview = {
   id: string;
@@ -12,18 +11,17 @@ type Interview = {
 /**
  * 면접관 전원이 우선순위 확인 요청에 응답을 마쳤을 때 호출한다. 순위가 높은
  * 시간부터(preferred_slots 순서대로) 실제로 지금도 비어있는지 다시 검증하며,
- * 전원 가능한 첫 번째 시간으로 자동 확정한다. 응답하는 동안 busy_slots가 이미
- * 최신 상태로 갱신돼 있으므로, matchAndPersist의 실검증이 곧 "전원 가능 여부" 확인이 된다.
+ * 전원 가능한 첫 번째 시간으로 매칭을 확정한다.
+ *
+ * 확정 메일은 여기서 자동으로 보내지 않는다 — "조율 완료" 상태로만 남겨두고,
+ * 리크루터가 상세 페이지에서 "확정 메일 발송" 버튼을 직접 눌러야 실제로 후보자·
+ * 면접관에게 메일이 나간다. 다른 확정 경로(수동 확정)와 동일하게, 가장 위험한
+ * 메일(최종 확정)은 항상 사람이 한 번 확인한 뒤에만 발송되도록 통일한 것이다.
  */
-export async function confirmFromPriorities(
-  supabase: SupabaseClient,
-  interview: Interview,
-  origin: string,
-): Promise<boolean> {
+export async function confirmFromPriorities(supabase: SupabaseClient, interview: Interview): Promise<boolean> {
   for (const slot of interview.preferred_slots) {
     const result = await matchAndPersist(supabase, interview.id, [slot], interview.panel, interview.interview_type);
     if (result?.status === "confirmed") {
-      await sendConfirmationEmail(supabase, result, origin);
       return true;
     }
   }
