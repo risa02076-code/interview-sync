@@ -357,6 +357,15 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
                     재발송
                   </button>
                 )}
+                {failed && (
+                  <Link
+                    href={`/interviewers?highlight=${p.id}`}
+                    className="text-xs text-destructive underline"
+                    title="이메일 주소 자체가 틀렸다면 재발송해도 똑같이 실패합니다 — 먼저 여기서 고쳐주세요"
+                  >
+                    이메일 수정
+                  </Link>
+                )}
               </div>
             );
           })}
@@ -446,6 +455,15 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
                             >
                               재발송
                             </button>
+                            {pcFailed && (
+                              <Link
+                                href={`/interviewers?highlight=${p.id}`}
+                                className="font-normal text-destructive underline"
+                                title="이메일 주소 자체가 틀렸다면 재발송해도 똑같이 실패합니다 — 먼저 여기서 고쳐주세요"
+                              >
+                                이메일 수정
+                              </Link>
+                            )}
                           </div>
                         )}
                       </th>

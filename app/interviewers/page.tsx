@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,6 +19,11 @@ type InterviewerRow = {
 };
 
 export default function InterviewersPage() {
+  const searchParams = useSearchParams();
+  // 면접 상세 페이지의 "이메일 수정" 링크로 들어오면, 그 면접관 카드로 스크롤하고
+  // 눈에 띄게 표시해서 여러 명 중에 어떤 사람을 고쳐야 하는지 바로 알 수 있게 한다.
+  const highlightId = searchParams.get("highlight");
+  const highlightRef = useRef<HTMLDivElement | null>(null);
   const [interviewers, setInterviewers] = useState<InterviewerRow[] | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -49,6 +55,12 @@ export default function InterviewersPage() {
       .then((res) => res.json())
       .then(setAllSlots);
   }, []);
+
+  useEffect(() => {
+    if (highlightId && interviewers) {
+      highlightRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [highlightId, interviewers]);
 
   function openCalendarEditor(p: InterviewerRow) {
     setEditingId((cur) => (cur === p.id ? null : p.id));
@@ -196,12 +208,19 @@ export default function InterviewersPage() {
 
       <div className="flex flex-col gap-3">
         {interviewers?.map((p) => (
-          <Card key={p.id}>
+          <Card
+            key={p.id}
+            ref={p.id === highlightId ? highlightRef : undefined}
+            className={p.id === highlightId ? "ring-2 ring-destructive" : undefined}
+          >
             <CardContent className="flex flex-col gap-3 p-4">
               <div className="flex items-baseline justify-between">
                 <span className="font-semibold">
                   {p.name} <span className="text-sm font-normal text-muted-foreground">· {p.role}</span>
                 </span>
+                {p.id === highlightId && (
+                  <span className="text-xs font-semibold text-destructive">⚠️ 이메일 확인 필요</span>
+                )}
               </div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>
