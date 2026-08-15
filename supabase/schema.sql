@@ -102,3 +102,33 @@ insert into rooms (name) values
   ('면접실 A'),
   ('면접실 B'),
   ('면접실 C');
+
+-- 사람이 Supabase Table Editor에서 직접 훑어볼 때 쓰는 읽기 전용 뷰.
+-- interviews 원본은 면접관을 UUID 배열로, 시간을 UTC로 저장해 그대로 보면 안 읽힌다.
+-- 앱 코드는 계속 원본(interviews)을 그대로 쓰고, 이 뷰는 사람이 볼 때만 참고한다.
+-- 자세한 내용은 migration_readable_view.sql 참고.
+create or replace view interviews_readable as
+select
+  i.id,
+  i.candidate_name as 후보자,
+  i.position as 직무,
+  i.interview_type as 면접유형,
+  i.status,
+  i.stage,
+  (
+    select string_agg(iv.name, ', ' order by iv.name)
+    from interviewers iv
+    where iv.id = any(i.panel)
+  ) as 면접관,
+  r.name as 회의실,
+  to_char(i.matched_slot::timestamptz at time zone 'Asia/Seoul', 'MM/DD(Dy) HH24:MI') as 확정_시간,
+  to_char(i.confirmation_sent_at at time zone 'Asia/Seoul', 'MM/DD HH24:MI') as 확정메일_발송시각,
+  (
+    select string_agg(to_char(s::timestamptz at time zone 'Asia/Seoul', 'MM/DD(Dy) HH24:MI'), ',  ' order by s)
+    from unnest(i.preferred_slots) as s
+  ) as 후보자_제출_순위,
+  coalesce(array_length(i.excluded_slots, 1), 0) as 제외된_시간_개수,
+  to_char(i.created_at at time zone 'Asia/Seoul', 'MM/DD HH24:MI') as 등록시각
+from interviews i
+left join rooms r on r.id = i.room_id
+order by i.created_at desc;
