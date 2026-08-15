@@ -64,8 +64,13 @@ npm run lint        # ESLint
 npx tsc --noEmit     # 타입 체크
 npm test             # Vitest — lib/matching.ts, lib/interviewerProgress.ts, lib/slots.ts,
                      # lib/status.ts, lib/busySlots.ts에 대한 단위 테스트
+
+# 아래는 로컬 dev 서버 + 실제 Supabase가 필요한 수동 통합 검증 (scripts/README.md 참고)
+node scripts/verify-reschedule-flow.js
+node scripts/verify-wide-availability-flow.js
 ```
 
-핵심 매칭·확정 로직, 진행률 계산, 상태 파생 로직은 위 단위 테스트로 커버된다. 이메일 발송·
-Supabase 연동이 걸린 API 라우트는 실제 API를 호출하는 시뮬레이션 스크립트로 수동 검증했다
-(세션 임시 폴더에만 존재하며 저장소에는 없음 — 필요하면 재작성 필요).
+핵심 매칭·확정 로직, 진행률 계산, 상태 파생 로직은 단위 테스트로 커버된다. 여러 API
+라우트와 Supabase를 오가는 전체 흐름(재조율, 다음 주 가용성 체크 → 에스컬레이션)은
+`scripts/`의 통합 검증 스크립트로 커버된다 — CI에서 자동으로 돌진 않지만, 저장소 안에
+재현 가능한 코드로 존재한다.
