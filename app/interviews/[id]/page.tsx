@@ -42,6 +42,7 @@ type HistoryEntry = {
   answeredSlots: string[] | null;
   answeredBusySlots: string[] | null;
   answeredPreferredSlots: string[] | null;
+  emailSentAt: string | null;
 };
 
 type Stage =
@@ -563,12 +564,20 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
                         : null;
                 const detailNoun =
                   h.kind === "interviewer" ? "불가능" : h.kind === "priority_confirm" ? "참석 가능" : "제출 순위";
+                // reschedule_request는 후보자 확정 메일에 딸린 링크일 뿐 별도로 발송 성공
+                // 여부를 기록하지 않으므로, 이 표시는 실제로 email_sent_at을 관리하는
+                // kind에서만 "발송 실패"로 단정한다 — 안 그러면 이 kind는 항상 null이라
+                // 매번 실패로 잘못 보이게 된다.
+                const emailTracked = h.kind === "interviewer" || h.kind === "candidate" || h.kind === "priority_confirm";
+                const sendFailed = emailTracked && !h.emailSentAt;
 
                 return (
                   <div key={h.id} className="rounded-md bg-muted/40 p-2.5 text-xs">
                     <p className="font-semibold">
                       {h.interviewerName ? `${h.interviewerName}님` : "후보자"} — {KIND_LABEL[h.kind]}{" "}
-                      <span className="font-normal text-muted-foreground">({created} 발송)</span>
+                      <span className={`font-normal ${sendFailed ? "text-destructive" : "text-muted-foreground"}`}>
+                        {sendFailed ? "(⚠️ 발송 실패)" : `(${created} 발송)`}
+                      </span>
                     </p>
                     {h.kind === "priority_confirm" && !!h.confirmSlots?.length && (
                       <p className="mt-0.5 text-muted-foreground">

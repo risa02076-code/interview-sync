@@ -53,6 +53,10 @@ export async function GET(_request: Request, { params }: Params) {
     answeredSlots: r.answered_slots ?? null,
     answeredBusySlots: r.answered_busy_slots ?? null,
     answeredPreferredSlots: r.answered_preferred_slots ?? null,
+    // 이 요청 행이 존재한다는 건 실제로 발송을 시도했다는 뜻이라(발송 전에는 행을
+    // 안 만듦), null이면 그 시도가 실패했다는 걸 안전하게 알 수 있다 — 히스토리에서도
+    // "OO시 발송"이라고 확정적으로 말하면 안 되고 실패 여부를 구분해서 보여줘야 한다.
+    emailSentAt: (r as { email_sent_at?: string | null }).email_sent_at ?? null,
   }));
 
   return NextResponse.json({
