@@ -68,7 +68,7 @@ export async function requestMoreAvailability(
       stage: "interviewer_pending",
       availability_round: round,
       note: failed.length
-        ? `${baseNote} / ⚠️ 발송 실패: ${failedText} — 아래 "재발송" 버튼으로 다시 보내주세요`
+        ? `${baseNote} / ⚠️ 발송 실패: ${failedText} — 상세보기에서 "재발송" 버튼을 눌러주세요`
         : baseNote,
     })
     .eq("id", interview.id);

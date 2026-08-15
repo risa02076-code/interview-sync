@@ -85,7 +85,7 @@ export async function sendCandidateInvite(
     await supabase
       .from("interviews")
       .update({
-        note: `⚠️ 후보자 초대 메일 발송 실패(${interview.candidate_email}, 사유: ${reason}) — "후보자에게 이메일 발송" 버튼을 다시 눌러주세요`,
+        note: `⚠️ 후보자 초대 메일 발송 실패(${interview.candidate_email}, 사유: ${reason}) — 상세보기에서 "후보자에게 이메일 발송" 버튼을 다시 눌러주세요`,
       })
       .eq("id", interview.id);
     return { ok: false, error: `후보자에게 메일 발송에 실패했습니다(${reason}).` };

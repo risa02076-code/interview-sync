@@ -76,7 +76,7 @@ export async function requestPriorityConfirmation(
       stage: "priority_confirm_pending",
       ...(failed.length
         ? {
-            note: `⚠️ 최종 확인 요청 메일 발송 실패: ${failedText} — 아래 "재발송" 버튼으로 다시 보내주세요`,
+            note: `⚠️ 최종 확인 요청 메일 발송 실패: ${failedText} — 상세보기에서 "재발송" 버튼을 눌러주세요`,
           }
         : {}),
     })
