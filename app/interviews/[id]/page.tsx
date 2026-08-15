@@ -17,6 +17,7 @@ type PriorityConfirmRecord = {
   submitted_at: string | null;
   confirm_slots: string[] | null;
   answered_slots: string[] | null;
+  email_sent_at: string | null;
 };
 type InterviewerDetail = {
   id: string;
@@ -24,6 +25,7 @@ type InterviewerDetail = {
   role: string;
   responded: boolean;
   respondedAt: string | null;
+  emailSentAt: string | null;
   busy_slots: string[];
   priorityConfirm: PriorityConfirmRecord | null;
 };
@@ -312,33 +314,52 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
       <div className="flex flex-col gap-1.5">
         <p className="text-sm font-semibold">면접 패널 응답 현황</p>
         <div className="flex flex-wrap gap-1.5">
-          {interview.panelDetail.map((p) => (
-            <div key={p.id} className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setExpandedPanelId((cur) => (cur === p.id ? null : p.id))}
-                className="text-left"
-              >
-                <Badge variant="outline" className="font-normal">
-                  {p.name} · {p.role} {p.responded ? "✔" : "○"}
-                  {p.responded && formatRespondedAt(p.respondedAt) && (
-                    <span className="text-muted-foreground"> ({formatRespondedAt(p.respondedAt)} 응답)</span>
-                  )}
-                </Badge>
-              </button>
-              {!p.responded && (
+          {interview.panelDetail.map((p) => {
+            // 발송을 아예 시도한 적 없으면(등록 직후) 실패로 보이면 안 되니, 초대를
+            // 실제로 보낸 뒤(stage가 created를 지난 뒤)에만 "이메일 자체가 안 갔다"를 오류로 본다.
+            const invitesSent = interview.stage !== "created";
+            const failed = invitesSent && !p.responded && !p.emailSentAt;
+            return (
+              <div key={p.id} className="flex items-center gap-1">
                 <button
                   type="button"
-                  disabled={busy}
-                  onClick={() => handleReinviteInterviewer(p.id, p.name)}
-                  className="text-xs text-primary underline disabled:opacity-40"
-                  title="이 케이스에 연결된 새 링크로 다시 발송합니다"
+                  onClick={() => setExpandedPanelId((cur) => (cur === p.id ? null : p.id))}
+                  className="text-left"
                 >
-                  재발송
+                  <Badge
+                    variant="outline"
+                    className={`font-normal ${failed ? "border-destructive/40 text-destructive" : ""}`}
+                  >
+                    {p.name} · {p.role} {p.responded ? "✔" : failed ? "⚠️" : "○"}
+                    {p.responded && formatRespondedAt(p.respondedAt) && (
+                      <span className="text-muted-foreground"> ({formatRespondedAt(p.respondedAt)} 응답)</span>
+                    )}
+                    {!p.responded && !failed && invitesSent && (
+                      <span className="text-muted-foreground"> (발송됨, 응답 대기)</span>
+                    )}
+                    {failed && " 발송 실패"}
+                  </Badge>
                 </button>
-              )}
-            </div>
-          ))}
+                {!p.responded && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => handleReinviteInterviewer(p.id, p.name)}
+                    className={`text-xs underline disabled:opacity-40 ${
+                      failed ? "font-semibold text-destructive" : "text-primary"
+                    }`}
+                    title={
+                      failed
+                        ? "메일 발송이 실패한 것으로 확인됩니다 — 새 링크로 다시 보냅니다"
+                        : "혹시 몰라 이 케이스에 연결된 새 링크로 다시 발송합니다"
+                    }
+                  >
+                    재발송
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
         {expandedPanelId && (
           <div className="flex flex-col gap-1 rounded-md bg-muted/50 p-2.5 text-xs">
@@ -398,29 +419,38 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
               <thead>
                 <tr>
                   <th className="pb-1 pr-3 text-left text-xs font-medium text-muted-foreground">후보자 제출 순위</th>
-                  {interview.panelDetail.map((p) => (
-                    <th key={p.id} className="px-2 pb-1 text-xs font-medium text-muted-foreground">
-                      {p.name}
-                      {p.priorityConfirm?.submitted_at && (
-                        <div className="font-normal">
-                          ({formatRespondedAt(p.priorityConfirm.submitted_at)} 확인)
-                        </div>
-                      )}
-                      {interview.status === "pending" && p.priorityConfirm?.status !== "submitted" && (
-                        <div>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => handleReinvitePriorityConfirm(p.id, p.name)}
-                            className="font-normal text-primary underline disabled:opacity-40"
-                            title="이 순위 목록으로 최종 확인을 다시 요청합니다"
-                          >
-                            재발송
-                          </button>
-                        </div>
-                      )}
-                    </th>
-                  ))}
+                  {interview.panelDetail.map((p) => {
+                    const pc = p.priorityConfirm;
+                    // 아직 최종 확인 메일 자체를 보낸 적이 없으면(pc가 없음) 실패가 아니라 "미시작"이다.
+                    const pcFailed = !!pc && pc.status !== "submitted" && !pc.email_sent_at;
+                    return (
+                      <th key={p.id} className="px-2 pb-1 text-xs font-medium text-muted-foreground">
+                        {p.name}
+                        {pc?.submitted_at && (
+                          <div className="font-normal">({formatRespondedAt(pc.submitted_at)} 확인)</div>
+                        )}
+                        {!pc?.submitted_at && pc?.email_sent_at && (
+                          <div className="font-normal text-muted-foreground">발송됨, 확인 대기</div>
+                        )}
+                        {pcFailed && <div className="font-normal text-destructive">⚠️ 발송 실패</div>}
+                        {interview.status === "pending" && pc?.status !== "submitted" && (
+                          <div>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => handleReinvitePriorityConfirm(p.id, p.name)}
+                              className={`font-normal underline disabled:opacity-40 ${
+                                pcFailed ? "text-destructive" : "text-primary"
+                              }`}
+                              title="이 순위 목록으로 최종 확인을 다시 요청합니다"
+                            >
+                              재발송
+                            </button>
+                          </div>
+                        )}
+                      </th>
+                    );
+                  })}
                   {interview.status === "pending" && <th className="pb-1" />}
                 </tr>
               </thead>

@@ -50,6 +50,8 @@ describe("sendInterviewerInvites", () => {
     expect(noteUpdate?.payload.note).toContain("배지훈");
     expect(noteUpdate?.payload.note).not.toContain("오세훈");
     expect(updateCalls.some((c) => c.payload.stage === "interviewer_pending")).toBe(true);
+    // 발송에 성공한 사람 몫으로는 email_sent_at이 기록되어야, 실패한 사람과 화면에서 구분된다.
+    expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);
   });
 
   it("전원 발송에 성공하면 note를 남기지 않는다", async () => {
@@ -60,5 +62,6 @@ describe("sendInterviewerInvites", () => {
 
     expect(result.ok).toBe(true);
     expect(updateCalls.some((c) => "note" in c.payload)).toBe(false);
+    expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);
   });
 });

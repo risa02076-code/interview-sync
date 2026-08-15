@@ -92,6 +92,7 @@ export async function sendCandidateInvite(
 
   // 제안 시점의 시간들을 고정해서 저장해둔다. 후보자가 링크를 다시 열어봐도(면접관
   // 가용 시간이 그 사이 바뀌었더라도) 처음 안내받은 시간과 동일한 목록을 보게 하기 위함.
+  await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
   await supabase
     .from("interviews")
     .update({

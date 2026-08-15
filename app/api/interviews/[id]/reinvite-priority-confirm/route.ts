@@ -74,6 +74,8 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "메일 발송에 실패했습니다." }, { status: 502 });
   }
 
+  await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
+
   if (interview.note?.includes("최종 확인 요청 메일 발송 실패") || interview.note?.includes("최종 확인 재발송 실패")) {
     await supabase.from("interviews").update({ note: null }).eq("id", id);
   }

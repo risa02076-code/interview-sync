@@ -54,6 +54,7 @@ describe("sendCandidateInvite", () => {
     expect(noteUpdate?.payload.note).toContain("발송 실패");
     expect(updateCalls.some((c) => "stage" in c.payload)).toBe(false);
     expect(updateCalls.some((c) => "recommended_slots" in c.payload)).toBe(false);
+    expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(false);
   });
 
   it("발송에 성공하면 stage를 candidate_pending으로 넘기고 recommended_slots를 저장한다", async () => {
@@ -66,6 +67,7 @@ describe("sendCandidateInvite", () => {
     const stageUpdate = updateCalls.find((c) => "stage" in c.payload);
     expect(stageUpdate?.payload.stage).toBe("candidate_pending");
     expect(stageUpdate?.payload.recommended_slots).toBeDefined();
+    expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);
   });
 
   it("후보자 이메일이 없으면 발송 시도 없이 바로 실패를 반환한다", async () => {

@@ -28,7 +28,7 @@ export async function GET(_request: Request, { params }: Params) {
   // 않도록, 실패하면 그냥 빈 값으로 대체한다(점진적으로 기능이 켜지는 형태).
   const { data: detailRequests } = await supabase
     .from("response_requests")
-    .select("id,confirm_slots,answered_slots,answered_busy_slots,answered_preferred_slots")
+    .select("id,confirm_slots,answered_slots,answered_busy_slots,answered_preferred_slots,email_sent_at")
     .eq("interview_id", id);
   const detailById = new Map((detailRequests ?? []).map((d) => [d.id, d]));
 
@@ -60,17 +60,26 @@ export async function GET(_request: Request, { params }: Params) {
     panelDetail: (data.panel as string[])
       .map((pid) => interviewers?.find((p) => p.id === pid))
       .filter(Boolean)
-      .map((p) => ({
-        ...p!,
-        responded: progress.respondedIds.has(p!.id),
-        respondedAt:
-          requests
-            .filter((r) => r.interviewer_id === p!.id && r.status === "submitted")
-            .map((r) => r.submitted_at)
-            .sort()
-            .at(-1) ?? null,
-        priorityConfirm: priorityConfirms.find((r) => r.interviewer_id === p!.id) ?? null,
-      })),
+      .map((p) => {
+        const forThis = requests.filter((r) => r.interviewer_id === p!.id);
+        const latest = forThis.length
+          ? forThis.reduce((a, b) => (a.created_at > b.created_at ? a : b))
+          : null;
+        return {
+          ...p!,
+          responded: progress.respondedIds.has(p!.id),
+          respondedAt:
+            requests
+              .filter((r) => r.interviewer_id === p!.id && r.status === "submitted")
+              .map((r) => r.submitted_at)
+              .sort()
+              .at(-1) ?? null,
+          // 최신 요청(재발송했다면 그 새 토큰) 기준으로 "메일이 실제로 나갔는지"를 본다.
+          // 응답 여부(responded)와 별개 — 응답 대기 중인지 발송 자체가 실패했는지를 구분하기 위함.
+          emailSentAt: (latest as { email_sent_at?: string | null } | null)?.email_sent_at ?? null,
+          priorityConfirm: priorityConfirms.find((r) => r.interviewer_id === p!.id) ?? null,
+        };
+      }),
     roomName: rooms?.find((r) => r.id === data.room_id)?.name ?? null,
     // 수동 확정 히트맵에서 임의의 시간에 회의실이 비어있는지 판단하는 데 쓴다.
     rooms: rooms ?? [],

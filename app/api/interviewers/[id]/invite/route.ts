@@ -45,5 +45,7 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요." }, { status: 502 });
   }
 
+  await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
+
   return NextResponse.json({ ok: true });
 }

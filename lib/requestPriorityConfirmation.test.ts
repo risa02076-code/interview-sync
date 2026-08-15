@@ -57,7 +57,7 @@ describe("requestPriorityConfirmation", () => {
 
   it("이메일이 없는 면접관은 건너뛰고 sent 카운트에 포함하지 않는다", async () => {
     vi.mocked(sendEmail).mockResolvedValue(undefined);
-    const { client } = fakeSupabase([
+    const { client, updateCalls } = fakeSupabase([
       { id: "a", name: "오세훈", email: "a@example.com" },
       { id: "b", name: "배지훈", email: null },
     ]);
@@ -65,5 +65,6 @@ describe("requestPriorityConfirmation", () => {
     const result = await requestPriorityConfirmation(client, interview, "http://localhost:3000");
 
     expect(result).toEqual({ ok: true, sent: 1 });
+    expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);
   });
 });

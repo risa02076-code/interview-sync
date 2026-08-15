@@ -77,7 +77,11 @@ create table if not exists response_requests (
   answered_busy_slots text[],
   -- kind='candidate'일 때만 사용: 이때 실제로 제출한 1~3순위 스냅샷.
   -- interviews.preferred_slots는 재조율 시 초기화되므로 마찬가지로 별도 보관.
-  answered_preferred_slots text[]
+  answered_preferred_slots text[],
+  -- 이 요청을 만들면서 보낸 메일이 실제로 발송에 성공했는지. "아직 응답 안 함"과
+  -- "애초에 메일이 안 갔음"을 구분하기 위한 것이라, status(pending/submitted)와는
+  -- 별개로 관리한다.
+  email_sent_at timestamptz
 );
 
 -- RLS 활성화, 정책은 만들지 않음 (API 라우트가 서비스 롤 키로만 접근 — 브라우저 직접 접근 차단)

@@ -64,6 +64,8 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "메일 발송에 실패했습니다." }, { status: 502 });
   }
 
+  await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
+
   // 재발송이 성공했으면, 이전에 이 사람 때문에 남아있던 "초대 실패" note는 정리한다.
   if (interview.note?.includes("면접관 초대 메일 발송 실패") || interview.note?.includes("재발송 실패")) {
     await supabase.from("interviews").update({ note: null }).eq("id", id);

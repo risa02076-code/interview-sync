@@ -47,6 +47,9 @@ export async function sendInterviewerInvites(
           <p><a href="${link}">${link}</a></p>
         `,
       );
+      // "응답을 아직 안 함"과 "애초에 메일이 안 감"을 구분할 수 있도록, 발송 성공
+      // 여부 자체를 이 요청 행에 남긴다.
+      await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
     } catch {
       failed.push(interviewer.name);
     }

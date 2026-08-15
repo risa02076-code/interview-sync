@@ -62,6 +62,7 @@ export async function requestPriorityConfirmation(
           <p><a href="${link}">${link}</a></p>
         `,
       );
+      await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
       sent += 1;
     } catch {
       failed.push(interviewer.name);
@@ -73,7 +74,9 @@ export async function requestPriorityConfirmation(
     .update({
       stage: "priority_confirm_pending",
       ...(failed.length
-        ? { note: `⚠️ 최종 확인 요청 메일 발송 실패: ${failed.join(", ")} — 다시 시도해주세요` }
+        ? {
+            note: `⚠️ 최종 확인 요청 메일 발송 실패: ${failed.join(", ")} — 아래 "재발송" 버튼으로 다시 보내주세요`,
+          }
         : {}),
     })
     .eq("id", interview.id);

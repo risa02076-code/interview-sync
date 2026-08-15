@@ -54,6 +54,7 @@ export async function requestMoreAvailability(
           <p><a href="${link}">${link}</a></p>
         `,
       );
+      await supabase.from("response_requests").update({ email_sent_at: new Date().toISOString() }).eq("token", token);
     } catch {
       failed.push(interviewer.name);
     }

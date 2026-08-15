@@ -59,5 +59,6 @@ describe("requestMoreAvailability", () => {
     expect(result).toEqual({ ok: true, sent: 1 });
     const noteUpdate = updateCalls.find((c) => "note" in c.payload);
     expect(noteUpdate?.payload.note).not.toContain("⚠️");
+    expect(updateCalls.some((c) => "email_sent_at" in c.payload)).toBe(true);
   });
 });
