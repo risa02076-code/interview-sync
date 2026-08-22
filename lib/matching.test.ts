@@ -74,6 +74,42 @@ describe("findMatch (broaden=false, 후보자가 제출한 시간 안에서만 �
   });
 });
 
+describe("findMatch (소요시간이 여러 슬롯에 걸치는 경우)", () => {
+  const NINE = "2024-01-02T00:00:00.000Z"; // 09:00 KST
+  const NINE_THIRTY = "2024-01-02T00:30:00.000Z"; // 09:30 KST
+  const TEN = "2024-01-02T01:00:00.000Z"; // 10:00 KST
+  const FIVE_THIRTY_PM = "2024-01-02T08:30:00.000Z"; // 17:30 KST
+
+  const free = (busy: string[] = []) => [{ id: "p1", name: "P1", role: "", busy_slots: busy }];
+  const room = (busy: string[] = []) => [{ id: "r1", name: "R1", busy_slots: busy }];
+
+  it("시작 슬롯은 비어 있어도 뒤 30분이 차 있으면 1시간 면접은 그 시간을 건너뛴다", () => {
+    const result = findMatch([NINE, TEN], free([NINE_THIRTY]), room(), false, true, 60);
+    expect(result.matchedSlot).toBe(TEN);
+  });
+
+  it("같은 상황에서 30분 면접이면 그 시간에 그대로 확정된다", () => {
+    const result = findMatch([NINE, TEN], free([NINE_THIRTY]), room(), false, true, 30);
+    expect(result.matchedSlot).toBe(NINE);
+  });
+
+  it("회의실도 면접 시간 전체가 비어 있어야 배정한다", () => {
+    const result = findMatch([NINE, TEN], free(), room([NINE_THIRTY]), false, true, 60);
+    expect(result.matchedSlot).toBe(TEN);
+  });
+
+  it("업무시간을 넘겨 끝나는 시작 시간은 후보에서 제외한다", () => {
+    const result = findMatch([FIVE_THIRTY_PM], free(), room(), false, true, 60);
+    expect(result.status).toBe("escalated");
+    expect(result.matchedSlot).toBeNull();
+  });
+
+  it("같은 마지막 슬롯이라도 30분 면접이면 확정할 수 있다", () => {
+    const result = findMatch([FIVE_THIRTY_PM], free(), room(), false, true, 30);
+    expect(result.matchedSlot).toBe(FIVE_THIRTY_PM);
+  });
+});
+
 // recommendLeastConflictSlots는 내부적으로 generateUpcomingSlots(businessDays)를 "지금" 기준으로
 // 호출해서, 테스트 시점과 무관하게 항상 맞는 슬롯 키를 쓰려면 같은 함수로 실제 후보 슬롯을 먼저
 // 뽑아서 그중 하나를 busy_slots에 넣어야 한다(하드코딩된 과거 날짜는 절대 매칭되지 않는다).

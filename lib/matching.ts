@@ -1,4 +1,9 @@
-import { generateUpcomingSlots } from "./slots";
+import {
+  SLOT_STEP_MINUTES,
+  fitsInBusinessHours,
+  generateUpcomingSlots,
+  occupiedSlots,
+} from "./slots";
 
 export type Interviewer = { id: string; name: string; role: string; busy_slots: string[] };
 export type Room = { id: string; name: string; busy_slots: string[] };
@@ -22,6 +27,11 @@ export function requiresRoom(interviewType: string): boolean {
  * 재조율(broaden=true) 시에는 후보자의 원래 희망시간에 갇히지 않고, 지금 기준으로
  * 다시 계산한 전체 영업일 슬롯을 재탐색한다.
  * (트러블슈팅 1번: 원래 희망시간 안에서만 찾으면 재조율 성공률이 떨어지는 문제를 발견해 수정함)
+ *
+ * durationMinutes는 면접이 실제로 차지하는 시간이다. 시작 슬롯 하나가 아니라 그
+ * 시간이 걸치는 슬롯 전체가 비어 있어야만 확정한다 — 1시간 면접을 10:00에 넣으려면
+ * 10:00과 10:30이 모두 비어 있어야 한다. 기본값은 격자 한 칸(30분)으로, 소요시간을
+ * 넘기지 않은 호출은 종전과 동일하게 동작한다.
  */
 export function findMatch(
   candidateSlots: string[],
@@ -29,6 +39,7 @@ export function findMatch(
   rooms: Room[],
   broaden: boolean,
   roomRequired: boolean = true,
+  durationMinutes: number = SLOT_STEP_MINUTES,
 ): MatchResult {
   const slotsToTry = broaden ? generateUpcomingSlots().map((s) => s.key) : candidateSlots;
 
@@ -37,12 +48,16 @@ export function findMatch(
   }
 
   for (const slot of slotsToTry) {
-    const panelFree = panelInterviewers.every((p) => !p.busy_slots.includes(slot));
+    // 업무시간을 넘겨 끝나는 시작 시간은 애초에 후보가 아니다(17:30 시작 1시간 면접).
+    if (!fitsInBusinessHours(slot, durationMinutes)) continue;
+
+    const span = occupiedSlots(slot, durationMinutes);
+    const panelFree = panelInterviewers.every((p) => span.every((s) => !p.busy_slots.includes(s)));
     if (!panelFree) continue;
 
     let roomId: string | null = null;
     if (roomRequired) {
-      const freeRoom = rooms.find((r) => !r.busy_slots.includes(slot));
+      const freeRoom = rooms.find((r) => span.every((s) => !r.busy_slots.includes(s)));
       if (!freeRoom) continue;
       roomId = freeRoom.id;
     }
@@ -74,6 +89,9 @@ const MAX_FALLBACK_RECOMMENDATIONS = 3;
  * 시간들을 추천한다. 전원 동시 가능(충돌 0)한 시간은 후보자가 고를 여지를 넓히기
  * 위해 개수 제한 없이 전부 반환하고, 하나도 없으면 그다음으로 충돌이 적은 시간들을
  * 최대 MAX_FALLBACK_RECOMMENDATIONS개까지만 대안으로 반환한다.
+ *
+ * 충돌 판정도 findMatch와 같은 기준을 쓴다 — 시작 슬롯만 보면 후보자에게 "전원
+ * 가능"이라고 안내한 시간이 확정 단계에서 겹침으로 걸러지는 어긋남이 생긴다.
  */
 export function recommendLeastConflictSlots(
   panelInterviewers: Interviewer[],
@@ -81,13 +99,18 @@ export function recommendLeastConflictSlots(
   roomRequired: boolean,
   businessDays: number = 5,
   excludeSlots: string[] = [],
+  durationMinutes: number = SLOT_STEP_MINUTES,
 ): SlotRecommendation[] {
   const excluded = new Set(excludeSlots);
   const scored = generateUpcomingSlots(businessDays)
-    .filter((s) => !excluded.has(s.key))
+    .filter((s) => !excluded.has(s.key) && fitsInBusinessHours(s.key, durationMinutes))
     .map((s) => {
-      const conflicts = panelInterviewers.filter((p) => p.busy_slots.includes(s.key)).map((p) => p.name);
-      const roomBlocked = roomRequired && !rooms.some((r) => !r.busy_slots.includes(s.key));
+      const span = occupiedSlots(s.key, durationMinutes);
+      const conflicts = panelInterviewers
+        .filter((p) => span.some((slot) => p.busy_slots.includes(slot)))
+        .map((p) => p.name);
+      const roomBlocked =
+        roomRequired && !rooms.some((r) => span.every((slot) => !r.busy_slots.includes(slot)));
       return { slot: s.key, conflicts, score: conflicts.length + (roomBlocked ? 1 : 0) };
     });
   if (!scored.length) return [];

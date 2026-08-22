@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { generateUpcomingSlots, formatSlotLabel } from "@/lib/slots";
+import {
+  generateUpcomingSlots,
+  formatSlotLabel,
+  interviewDurationMinutes,
+  occupiedSlots,
+} from "@/lib/slots";
 import { sendCandidateInvite } from "@/lib/sendCandidateInvite";
 import { sendInterviewerInvites } from "@/lib/sendInterviewerInvites";
 import { recommendLeastConflictSlots, requiresRoom } from "@/lib/matching";
@@ -53,6 +58,7 @@ export async function GET(_request: Request, { params }: Params) {
         needsRoom,
         businessDays,
         interview.excluded_slots ?? [],
+        interviewDurationMinutes(interview.interview_type),
       )
         .filter((r) => r.conflicts.length === 0)
         .map((r) => ({ key: r.slot, label: formatSlotLabel(r.slot) }));
@@ -313,22 +319,25 @@ export async function POST(request: Request, { params }: Params) {
 
     if (interview && interview.status === "confirmed" && interview.matched_slot) {
       const oldSlot = interview.matched_slot as string;
+      // 면접이 차지하던 시간 전체를 비운다. 시작 슬롯만 지우면 1시간 면접의 뒷
+      // 30분이 계속 사용 중으로 남아 다음 조율에서 그 시간을 쓸 수 없게 된다.
+      const oldSpan = occupiedSlots(oldSlot, interviewDurationMinutes(interview.interview_type));
 
       const { data: panel } = await supabase.from("interviewers").select("*").in("id", interview.panel);
       for (const p of panel ?? []) {
-        if ((p.busy_slots as string[]).includes(oldSlot)) {
+        if ((p.busy_slots as string[]).some((s) => oldSpan.includes(s))) {
           await supabase
             .from("interviewers")
-            .update({ busy_slots: (p.busy_slots as string[]).filter((s) => s !== oldSlot) })
+            .update({ busy_slots: (p.busy_slots as string[]).filter((s) => !oldSpan.includes(s)) })
             .eq("id", p.id);
         }
       }
       if (interview.room_id) {
         const { data: room } = await supabase.from("rooms").select("*").eq("id", interview.room_id).single();
-        if (room && (room.busy_slots as string[]).includes(oldSlot)) {
+        if (room && (room.busy_slots as string[]).some((s) => oldSpan.includes(s))) {
           await supabase
             .from("rooms")
-            .update({ busy_slots: (room.busy_slots as string[]).filter((s) => s !== oldSlot) })
+            .update({ busy_slots: (room.busy_slots as string[]).filter((s) => !oldSpan.includes(s)) })
             .eq("id", interview.room_id);
         }
       }
@@ -454,6 +463,8 @@ export async function POST(request: Request, { params }: Params) {
           rooms ?? [],
           needsRoom,
           businessDays,
+          [],
+          interviewDurationMinutes(interview.interview_type),
         );
         const hasPerfectMatch = recommendations.length > 0 && recommendations[0].conflicts.length === 0;
 

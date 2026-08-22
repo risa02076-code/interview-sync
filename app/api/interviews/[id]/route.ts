@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { findMatch, requiresRoom, type Interviewer, type Room } from "@/lib/matching";
 import { computeInterviewerProgress } from "@/lib/interviewerProgress";
+import { interviewDurationMinutes, occupiedSlots } from "@/lib/slots";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -119,23 +120,35 @@ export async function PATCH(_request: Request, { params }: Params) {
   const panel = panelInterviewers as Interviewer[];
   const roomList = rooms as Room[];
 
+  // 면접이 실제로 차지하는 시간 전체를 기준으로 비우고 채운다 — 시작 슬롯만
+  // 다루면 1시간 면접의 뒷 30분이 캘린더에 남거나 사라지지 않는다.
+  const durationMinutes = interviewDurationMinutes(interview.interview_type);
+  const oldSpan = occupiedSlots(interview.matched_slot, durationMinutes);
+
   // 패널의 첫 번째 면접관 일정에 충돌을 주입해 "면접관 일정 변경"을 시뮬레이션한다
   const trigger = panel[0];
-  const triggerBusy = [...trigger.busy_slots, interview.matched_slot];
+  const triggerBusy = [...new Set([...trigger.busy_slots, ...oldSpan])];
   await supabase.from("interviewers").update({ busy_slots: triggerBusy }).eq("id", trigger.id);
   trigger.busy_slots = triggerBusy;
 
   if (interview.room_id) {
     const room = roomList.find((r) => r.id === interview.room_id);
     if (room) {
-      const freedBusy = room.busy_slots.filter((s: string) => s !== interview.matched_slot);
+      const freedBusy = room.busy_slots.filter((s: string) => !oldSpan.includes(s));
       await supabase.from("rooms").update({ busy_slots: freedBusy }).eq("id", room.id);
       room.busy_slots = freedBusy;
     }
   }
 
   // 트러블슈팅: 재조율 시에는 후보자의 원래 희망시간에 갇히지 않고 전체 슬롯을 재탐색한다
-  const result = findMatch([], panel, roomList, true, requiresRoom(interview.interview_type));
+  const result = findMatch(
+    [],
+    panel,
+    roomList,
+    true,
+    requiresRoom(interview.interview_type),
+    durationMinutes,
+  );
   const note =
     result.status === "rescheduled"
       ? `${trigger.name}님 일정 변경 감지 → 새 일정으로 자동 재조율됨`
@@ -157,17 +170,18 @@ export async function PATCH(_request: Request, { params }: Params) {
   if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 });
 
   if (result.status === "rescheduled" && result.matchedSlot !== null) {
+    const newSpan = occupiedSlots(result.matchedSlot, durationMinutes);
     for (const p of panel) {
       await supabase
         .from("interviewers")
-        .update({ busy_slots: [...p.busy_slots, result.matchedSlot] })
+        .update({ busy_slots: [...new Set([...p.busy_slots, ...newSpan])] })
         .eq("id", p.id);
     }
     const room = roomList.find((r) => r.id === result.roomId);
     if (room) {
       await supabase
         .from("rooms")
-        .update({ busy_slots: [...room.busy_slots, result.matchedSlot] })
+        .update({ busy_slots: [...new Set([...room.busy_slots, ...newSpan])] })
         .eq("id", room.id);
     }
   }

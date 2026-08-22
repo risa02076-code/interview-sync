@@ -1,7 +1,7 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { generateToken } from "./token";
 import { sendEmail, emailErrorReason } from "./email";
-import { formatSlotLabel } from "./slots";
+import { formatSlotLabel, interviewDurationMinutes } from "./slots";
 import { recommendLeastConflictSlots, requiresRoom, type Interviewer, type Room } from "./matching";
 
 type Interview = {
@@ -42,6 +42,7 @@ export async function sendCandidateInvite(
     needsRoom,
     5,
     interview.excluded_slots ?? [],
+    interviewDurationMinutes(interview.interview_type),
   );
   if (!recommendations.length) {
     return { ok: false, error: "추천할 수 있는 시간대가 없습니다." };

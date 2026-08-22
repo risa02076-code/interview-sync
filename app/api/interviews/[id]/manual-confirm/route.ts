@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requiresRoom, type Room } from "@/lib/matching";
+import { interviewDurationMinutes, occupiedSlots } from "@/lib/slots";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -27,8 +28,17 @@ export async function POST(request: Request, { params }: Params) {
   const needsRoom = requiresRoom(interview.interview_type);
   const { data: rooms } = needsRoom ? await supabase.from("rooms").select("*") : { data: null };
 
-  const conflicts = (panel ?? []).filter((p) => p.busy_slots.includes(slot)).map((p) => p.name);
-  const freeRoom = needsRoom ? (rooms as Room[] | null)?.find((r) => !r.busy_slots.includes(slot)) : undefined;
+  // 수동 확정도 면접이 실제로 차지하는 시간 전체를 기준으로 다룬다. 시작 슬롯만
+  // 보면 1시간 면접의 뒷 30분에 겹치는 면접관을 "겹침 없음"으로 안내하고, 그 30분을
+  // 캘린더에도 남기지 않아 다음 조율에서 또 겹치는 일정이 잡힌다.
+  const span = occupiedSlots(slot, interviewDurationMinutes(interview.interview_type));
+
+  const conflicts = (panel ?? [])
+    .filter((p) => span.some((s: string) => p.busy_slots.includes(s)))
+    .map((p) => p.name);
+  const freeRoom = needsRoom
+    ? (rooms as Room[] | null)?.find((r) => span.every((s) => !r.busy_slots.includes(s)))
+    : undefined;
 
   const { data: updated, error: uErr } = await supabase
     .from("interviews")
@@ -48,14 +58,15 @@ export async function POST(request: Request, { params }: Params) {
   if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 });
 
   for (const p of panel ?? []) {
-    if (!p.busy_slots.includes(slot)) {
-      await supabase.from("interviewers").update({ busy_slots: [...p.busy_slots, slot] }).eq("id", p.id);
+    const merged = [...new Set([...p.busy_slots, ...span])];
+    if (merged.length !== p.busy_slots.length) {
+      await supabase.from("interviewers").update({ busy_slots: merged }).eq("id", p.id);
     }
   }
   if (freeRoom) {
     await supabase
       .from("rooms")
-      .update({ busy_slots: [...freeRoom.busy_slots, slot] })
+      .update({ busy_slots: [...new Set([...freeRoom.busy_slots, ...span])] })
       .eq("id", freeRoom.id);
   }
 
