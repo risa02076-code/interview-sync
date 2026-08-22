@@ -1,7 +1,8 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail, emailErrorReason } from "./email";
-import { formatSlotLabel } from "./slots";
+import { formatSlotRangeLabel, interviewDurationMinutes } from "./slots";
 import { generateToken } from "./token";
+import { checkSingleInterviewViolations } from "./checkConsistency";
 
 type Interview = {
   id: string;
@@ -24,12 +25,41 @@ export async function sendConfirmationEmail(
   supabase: SupabaseClient,
   interview: Interview,
   origin?: string,
+  options?: { force?: boolean },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!["confirmed", "rescheduled"].includes(interview.status) || !interview.matched_slot) {
     return { ok: false, error: "매칭이 완료된 케이스만 확정 메일을 보낼 수 있습니다." };
   }
   if (interview.confirmation_sent_at) {
     return { ok: false, error: "이미 확정 메일을 발송했습니다." };
+  }
+
+  // 가장 위험한 메일이라 발송 직전에 한 번 더, 이 건 하나만 콕 집어 모순이 없는지
+  // 확인한다. 이 판단 자체가 틀릴 수 있어서(잘못 정의된 불변조건 등) 무조건 막지는
+  // 않고, 이유를 그대로 보여주고 "정말 문제없다"고 판단하면 force로 넘어갈 길을
+  // 열어둔다 — 사람의 최종 판단을 대신하는 게 아니라 돕는 용도이기 때문이다.
+  if (!options?.force) {
+    const violations = await checkSingleInterviewViolations(supabase, {
+      id: interview.id,
+      candidate_name: interview.candidate_name,
+      interview_type: interview.interview_type,
+      panel: interview.panel,
+      matched_slot: interview.matched_slot,
+      room_id: interview.room_id,
+      status: interview.status as "confirmed" | "rescheduled" | "escalated" | "pending",
+      confirmation_sent_at: interview.confirmation_sent_at,
+    });
+    if (violations.length) {
+      const detail = violations.map((v) => v.detail).join(" / ");
+      await supabase
+        .from("interviews")
+        .update({ note: `🚨 확정 메일 발송 보류 — 정합성 오류: ${detail}` })
+        .eq("id", interview.id);
+      return {
+        ok: false,
+        error: `정합성 오류로 발송을 보류했습니다: ${detail} — 문제가 없다고 판단되면 강제 발송으로 다시 시도해주세요.`,
+      };
+    }
   }
 
   let roomName = interview.interview_type;
@@ -52,7 +82,12 @@ export async function sendConfirmationEmail(
     return { ok: false, error: "발송할 이메일 주소가 없습니다." };
   }
 
-  const when = formatSlotLabel(interview.matched_slot);
+  // 시작 시각만 보내면 면접이 언제 끝나는지 알 수 없어, 뒤에 다른 일정을 잡는 사고가
+  // 생긴다. 소요시간을 아는 이상 끝나는 시각까지 함께 안내한다.
+  const when = formatSlotRangeLabel(
+    interview.matched_slot,
+    interviewDurationMinutes(interview.interview_type),
+  );
   let rescheduleLink: string | null = null;
   if (origin && interview.candidate_email) {
     const token = generateToken();

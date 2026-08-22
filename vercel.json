@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/reminders",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/consistency-check",
+      "schedule": "15 0 * * *"
     }
   ]
 }

@@ -12,7 +12,7 @@ type Params = { params: Promise<{ id: string }> };
  */
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
-  const { slot } = (await request.json()) as { slot: string };
+  const { slot, force } = (await request.json()) as { slot: string; force?: boolean };
   if (!slot) return NextResponse.json({ error: "시간을 선택해주세요." }, { status: 400 });
 
   const supabase = createAdminClient();
@@ -36,7 +36,7 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  await sendConfirmationEmail(supabase, updated, new URL(request.url).origin);
+  await sendConfirmationEmail(supabase, updated, new URL(request.url).origin, { force: force === true });
 
   return NextResponse.json(updated);
 }

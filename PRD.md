@@ -95,3 +95,5 @@ response_requests (이메일 응답 요청 — 토큰 기반)
 ```
 
 슬롯은 고정된 날짜 목록이 아니라, 요청 시점 기준 "다음 영업일(주말 제외) 5일 × 업무시간(09~18시) 30분 단위"를 매번 계산해 ISO 날짜시각 문자열로 표현한다 (`lib/slots.ts`의 `generateUpcomingSlots`). `interviewers.busy_slots` / `rooms.busy_slots` / `interviews.preferred_slots` / `matched_slot` 은 모두 이 문자열 값을 공유한다.
+
+`matched_slot`은 **면접이 시작하는 시간**이고, 면접이 실제로 차지하는 시간은 유형별 소요시간(`lib/slots.ts`의 `INTERVIEW_DURATION_MINUTES` — 대면 60분, 온라인·전화 30분)으로 정해진다. 그래서 1시간 면접은 슬롯 두 칸을 차지한다: 확정 시 `busy_slots`에는 시작 슬롯과 그다음 슬롯이 함께 기록되고(`occupiedSlots`), 매칭은 그 구간 전체가 비어 있을 때만 확정하며(`findMatch`), 이중 배정 검사는 슬롯 문자열이 같은지가 아니라 시간 구간이 겹치는지로 판단한다(`interviewsOverlap`). 업무시간을 넘겨 끝나는 시작 시간(17:30 시작 1시간 면접)은 매칭 후보에서 제외되고, 이미 저장된 건은 정합성 검사가 `outside_business_hours`로 잡는다.
