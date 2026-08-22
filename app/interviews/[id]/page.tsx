@@ -97,6 +97,10 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
   const [busy, setBusy] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  // 정합성 검사가 발송을 보류했을 때만 채워진다. 보류는 "실패"가 아니라 사람의
+  // 판단을 기다리는 상태라, 이유를 그대로 보여주고 강제 발송 버튼을 함께 띄운다.
+  // slot이 있으면 순위 확정 경로, 없으면 확정 메일 발송 버튼 경로다.
+  const [held, setHeld] = useState<{ reason: string; slot: string | null } | null>(null);
 
   const [allSlots, setAllSlots] = useState<GridSlot[]>([]);
   const [manualOpen, setManualOpen] = useState(false);
@@ -208,33 +212,69 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     }
   }
 
-  async function handleConfirm() {
+  async function handleConfirm(force = false) {
     setBusy(true);
-    const res = await fetch(`/api/interviews/${id}/confirm`, { method: "POST" });
+    const res = await fetch(`/api/interviews/${id}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force }),
+    });
     setBusy(false);
     if (res.ok) {
-      setToast("후보자·면접관 전원에게 확정 메일을 발송했습니다.");
+      setHeld(null);
+      setToast(
+        force
+          ? "정합성 오류를 확인한 뒤 그대로 발송했습니다."
+          : "후보자·면접관 전원에게 확정 메일을 발송했습니다.",
+      );
       load();
     } else {
       const body = await res.json();
-      setToast(body.error ?? "확정 메일 발송에 실패했습니다.");
+      const message = body.error ?? "확정 메일 발송에 실패했습니다.";
+      setHeld(body.held ? { reason: message, slot: null } : null);
+      setToast(body.held ? null : message);
+      // 보류 사유는 note에도 남으므로 화면을 다시 읽어 최신 상태를 보여준다.
+      if (body.held) load();
     }
   }
 
-  async function handleConfirmPriority(slot: string) {
+  async function handleConfirmPriority(slot: string, force = false) {
     setBusy(true);
     const res = await fetch(`/api/interviews/${id}/confirm-priority`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slot }),
+      body: JSON.stringify({ slot, force }),
     });
     setBusy(false);
-    if (res.ok) {
-      setToast("선택하신 시간으로 확정하고 확정 메일을 발송했습니다.");
-      load();
-    } else {
-      const body = await res.json();
+    const body = await res.json();
+    if (!res.ok) {
       setToast(body.error ?? "확정에 실패했습니다.");
+      return;
+    }
+    // 확정은 됐지만 메일이 보류될 수 있다 — 둘을 구분해서 알린다.
+    if (body.mail?.ok) {
+      setHeld(null);
+      setToast("선택하신 시간으로 확정하고 확정 메일을 발송했습니다.");
+    } else if (body.mail?.held) {
+      setHeld({ reason: body.mail.error, slot });
+      setToast(null);
+    } else {
+      setToast(`확정은 됐지만 메일 발송에 실패했습니다: ${body.mail?.error ?? "알 수 없는 오류"}`);
+    }
+    load();
+  }
+
+  // 보류 사유를 확인한 담당자가 그대로 발송하겠다고 결정했을 때. 되돌릴 수 없는
+  // 발송이라 한 번 더 묻는다(삭제와 같은 방식).
+  async function handleForceSend() {
+    if (!held) return;
+    if (!confirm("정합성 오류가 있는 상태로 확정 메일을 발송합니다. 발송 후에는 되돌릴 수 없습니다. 계속할까요?")) {
+      return;
+    }
+    if (held.slot) {
+      await handleConfirmPriority(held.slot, true);
+    } else {
+      await handleConfirm(true);
     }
   }
 
@@ -645,6 +685,26 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
       )}
       {toast && <p className="text-sm text-primary">{toast}</p>}
 
+      {held && (
+        <div className="flex flex-col gap-2 rounded-md border border-destructive p-3">
+          <p className="text-sm font-medium text-destructive">확정 메일 발송을 보류했습니다</p>
+          <p className="text-sm text-muted-foreground">{held.reason}</p>
+          <p className="text-xs text-muted-foreground">
+            이 검사는 저장된 다른 확정 건과 대조해 겹침·누락을 찾습니다. 검사 자체가 틀릴 수도
+            있으니, 실제로 문제가 없다고 판단되면 그대로 발송할 수 있습니다. 발송한 메일은
+            회수할 수 없습니다.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="destructive" size="sm" disabled={busy} onClick={handleForceSend}>
+              {busy ? "발송 중..." : "확인했습니다 — 그대로 발송"}
+            </Button>
+            <Button variant="outline" size="sm" disabled={busy} onClick={() => setHeld(null)}>
+              닫기
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {(interview.status === "confirmed" || interview.status === "rescheduled") && (
           <Button onClick={handleReschedule} disabled={busy} variant="secondary">
@@ -652,7 +712,7 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
           </Button>
         )}
         {displayStatus === "coordinated" && (
-          <Button onClick={handleConfirm} disabled={busy}>
+          <Button onClick={() => handleConfirm()} disabled={busy}>
             {busy ? "발송 중..." : "확정 메일 발송"}
           </Button>
         )}

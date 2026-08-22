@@ -124,7 +124,14 @@ export default function InterviewsPage() {
     setBusyId(null);
     if (!res.ok) {
       const body = await res.json();
-      alert(body.error ?? "확정 메일 발송에 실패했습니다.");
+      // 보류는 사람의 판단이 필요한 상태다. 강제 발송 버튼은 상세 화면에만 두었으니
+      // (목록에서 되돌릴 수 없는 발송을 결정하게 만들지 않기 위해) 그쪽으로 안내한다.
+      alert(
+        body.held
+          ? `${body.error}\n\n상세 화면에서 사유를 확인하고 그대로 발송할 수 있습니다.`
+          : (body.error ?? "확정 메일 발송에 실패했습니다."),
+      );
+      load();
       return;
     }
     load();

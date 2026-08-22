@@ -26,7 +26,7 @@ export async function sendConfirmationEmail(
   interview: Interview,
   origin?: string,
   options?: { force?: boolean },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: string; held?: true }> {
   if (!["confirmed", "rescheduled"].includes(interview.status) || !interview.matched_slot) {
     return { ok: false, error: "매칭이 완료된 케이스만 확정 메일을 보낼 수 있습니다." };
   }
@@ -55,8 +55,12 @@ export async function sendConfirmationEmail(
         .from("interviews")
         .update({ note: `🚨 확정 메일 발송 보류 — 정합성 오류: ${detail}` })
         .eq("id", interview.id);
+      // held를 따로 실어 보낸다 — 화면이 "그냥 실패"와 "사람의 판단을 기다리는
+      // 보류"를 구분해서, 보류일 때만 강제 발송 버튼을 띄울 수 있게 하려는 것이다.
+      // 에러 문구를 문자열로 비교해 판단하면 문구를 손볼 때마다 화면이 깨진다.
       return {
         ok: false,
+        held: true,
         error: `정합성 오류로 발송을 보류했습니다: ${detail} — 문제가 없다고 판단되면 강제 발송으로 다시 시도해주세요.`,
       };
     }

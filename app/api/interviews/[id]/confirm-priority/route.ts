@@ -36,7 +36,15 @@ export async function POST(request: Request, { params }: Params) {
     );
   }
 
-  await sendConfirmationEmail(supabase, updated, new URL(request.url).origin, { force: force === true });
+  // 확정 자체는 이미 성공했으므로 200으로 응답하되, 메일 발송 결과를 함께 실어
+  // 보낸다. 결과를 버리면 정합성 오류로 발송이 보류돼도 화면에는 "발송했습니다"로
+  // 보여서, 아무도 메일이 안 나간 걸 모른 채 넘어간다.
+  const mail = await sendConfirmationEmail(supabase, updated, new URL(request.url).origin, {
+    force: force === true,
+  });
 
-  return NextResponse.json(updated);
+  return NextResponse.json({
+    ...updated,
+    mail: mail.ok ? { ok: true } : { ok: false, error: mail.error, held: mail.held ?? false },
+  });
 }

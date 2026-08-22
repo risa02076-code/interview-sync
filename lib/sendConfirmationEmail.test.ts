@@ -137,9 +137,28 @@ describe("sendConfirmationEmail", () => {
 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toContain("정합성 오류");
+    // 화면이 "그냥 실패"와 구분해 강제 발송 버튼을 띄울 수 있어야 한다.
+    if (!result.ok) expect(result.held).toBe(true);
     expect(sendEmail).not.toHaveBeenCalled();
     const noteUpdate = updateCalls.find((c) => "note" in c.payload);
     expect(noteUpdate?.payload.note).toContain("정합성 오류");
+  });
+
+  it("정합성 보류가 아닌 실패에는 held를 세우지 않는다", async () => {
+    const { client } = fakeSupabase();
+
+    // 이미 발송한 건은 정합성과 무관한 거절이라, 강제 발송으로 풀 수 있는 상태가 아니다.
+    const result = await sendConfirmationEmail(client, {
+      ...baseInterview,
+      confirmation_sent_at: "2024-01-01T00:00:00.000Z",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.held).toBeUndefined();
+      expect(result.error).toContain("이미 확정 메일을 발송했습니다");
+    }
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 
   it("면접관들에게도 각각 확정 메일이 발송된다", async () => {

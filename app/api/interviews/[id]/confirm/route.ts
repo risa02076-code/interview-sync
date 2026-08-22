@@ -22,7 +22,10 @@ export async function POST(request: Request, { params }: Params) {
 
   const origin = new URL(request.url).origin;
   const result = await sendConfirmationEmail(supabase, interview, origin, { force });
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: 400 });
+  if (!result.ok) {
+    // held를 그대로 넘겨, 화면이 보류와 실패를 구분해 강제 발송 버튼을 띄울 수 있게 한다.
+    return NextResponse.json({ error: result.error, held: result.held ?? false }, { status: 400 });
+  }
 
   return NextResponse.json(result);
 }
