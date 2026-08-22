@@ -80,9 +80,9 @@ export async function GET(_request: Request, { params }: Params) {
       .eq("id", reqRow.interview_id)
       .single();
 
-    // "다음 주" — 오늘부터 7일 뒤를 기준으로 영업일 5일(1주)을 새로 계산한다.
-    const nextWeekFrom = new Date();
-    nextWeekFrom.setDate(nextWeekFrom.getDate() + 7);
+    // "다음 주" — 지금부터 7일 뒤를 기준으로 영업일 5일(1주)을 새로 계산한다.
+    // 로컬 날짜 getter 대신 밀리초로 더한다(서버 타임존에 따라 결과가 달라지지 않도록).
+    const nextWeekFrom = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
     return NextResponse.json({
       kind: "candidate_wide_availability",

@@ -1,3 +1,5 @@
+import { kstShifted } from "@/lib/slots";
+
 export type InterviewerDetail = {
   id: string;
   name: string;
@@ -55,29 +57,55 @@ export const CAL_COLOR_LABEL: Record<CalendarColor, string> = {
 export const HOURS = Array.from({ length: 10 }, (_, i) => 9 + i); // 09..18
 const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
 
-export function startOfWeek(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
+/**
+ * 이 캘린더의 모든 날짜 계산은 "한국 시간으로 9시간 시프트한 Date"를 쓰고 UTC
+ * getter로만 읽는다(lib/slots.ts의 kstShifted와 같은 규칙).
+ *
+ * 로컬 getter를 쓰면 보는 사람의 시간대에 따라 주 시작일과 이벤트가 놓이는 칸이
+ * 달라진다 — 담당자가 해외에서 열면 한국 기준 월요일 09:00 면접이 일요일 밤
+ * 칸으로 밀려서, 캘린더가 실제 일정과 다른 그림을 보여준다.
+ *
+ * 이름에 Kst가 붙은 값끼리만 비교한다. 시프트된 Date와 시프트하지 않은 Date를
+ * 섞으면 9시간이 두 번 어긋난다.
+ */
+export function kstNow(): Date {
+  return kstShifted(new Date());
+}
+
+/** 시프트된 Date를 받아 그 주의 월요일 자정(한국 기준)을 시프트된 Date로 돌려준다. */
+export function startOfWeek(kstDate: Date): Date {
+  const d = new Date(kstDate);
+  const day = d.getUTCDay();
   const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
-  d.setHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() + diff);
+  d.setUTCHours(0, 0, 0, 0);
   return d;
 }
 
-export function addDays(date: Date, n: number): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
+export function addDays(kstDate: Date, n: number): Date {
+  const d = new Date(kstDate);
+  d.setUTCDate(d.getUTCDate() + n);
   return d;
 }
 
+/** 시프트된 Date 두 개가 한국 기준 같은 날인지 */
 export function isSameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
 }
 
-export function dayLabel(d: Date): string {
-  return `${d.getMonth() + 1}/${d.getDate()}(${DAY_NAMES[d.getDay()]})`;
+/** 시프트된 Date와 저장된 슬롯 키(UTC ISO)가 한국 기준 같은 날인지 */
+export function isSameDayAsSlot(kstDate: Date, slotKey: string): boolean {
+  return isSameDay(kstDate, kstShifted(slotKey));
+}
+
+export function dayLabel(kstDate: Date): string {
+  return `${kstDate.getUTCMonth() + 1}/${kstDate.getUTCDate()}(${DAY_NAMES[kstDate.getUTCDay()]})`;
 }
 
 export function dateRangeLabel(start: Date, end: Date): string {
-  return `${start.getMonth() + 1}/${start.getDate()} - ${end.getMonth() + 1}/${end.getDate()}`;
+  return `${start.getUTCMonth() + 1}/${start.getUTCDate()} - ${end.getUTCMonth() + 1}/${end.getUTCDate()}`;
 }

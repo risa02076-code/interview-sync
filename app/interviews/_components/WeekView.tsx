@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { formatSlotLabel } from "@/lib/slots";
+import { formatSlotLabel, kstHour, kstMinute } from "@/lib/slots";
 import {
   type InterviewRow,
   calendarColor,
@@ -11,8 +11,10 @@ import {
   startOfWeek,
   addDays,
   isSameDay,
+  isSameDayAsSlot,
   dayLabel,
   dateRangeLabel,
+  kstNow,
 } from "./types";
 
 const ROW_HEIGHT = 64;
@@ -26,23 +28,24 @@ export function WeekView({
 }) {
   const [weekOffset, setWeekOffset] = useState(0);
 
-  const monday = useMemo(() => addDays(startOfWeek(new Date()), weekOffset * 7), [weekOffset]);
+  // 주 이동과 "지금" 표시 모두 한국 시간 기준으로 계산한다(시프트된 Date끼리만 비교).
+  const monday = useMemo(() => addDays(startOfWeek(kstNow()), weekOffset * 7), [weekOffset]);
   const days = useMemo(() => Array.from({ length: 5 }, (_, i) => addDays(monday, i)), [monday]);
-  const now = new Date();
+  const now = kstNow();
 
   const eventsByDay = useMemo(() => {
     return days.map((day) =>
       interviews
-        .filter((iv) => iv.matched_slot && isSameDay(new Date(iv.matched_slot), day))
+        .filter((iv) => iv.matched_slot && isSameDayAsSlot(day, iv.matched_slot))
         .sort((a, b) => new Date(a.matched_slot!).getTime() - new Date(b.matched_slot!).getTime()),
     );
   }, [days, interviews]);
 
   const nowInRange =
-    now.getHours() >= HOURS[0] &&
-    now.getHours() < HOURS[HOURS.length - 1] + 1 &&
+    now.getUTCHours() >= HOURS[0] &&
+    now.getUTCHours() < HOURS[HOURS.length - 1] + 1 &&
     days.some((d) => isSameDay(d, now));
-  const nowTopPct = ((now.getHours() + now.getMinutes() / 60 - HOURS[0]) / HOURS.length) * 100;
+  const nowTopPct = ((now.getUTCHours() + now.getUTCMinutes() / 60 - HOURS[0]) / HOURS.length) * 100;
 
   return (
     <div className="rounded-lg border bg-white">
@@ -113,8 +116,8 @@ export function WeekView({
             {days.map((d, ci) => (
               <div key={d.toISOString()} className="relative flex-1 border-l">
                 {eventsByDay[ci].map((iv) => {
-                  const slotDate = new Date(iv.matched_slot!);
-                  const hourOffset = slotDate.getHours() + slotDate.getMinutes() / 60 - HOURS[0];
+                  const hourOffset =
+                    kstHour(iv.matched_slot!) + kstMinute(iv.matched_slot!) / 60 - HOURS[0];
                   const color = calendarColor(iv);
                   return (
                     <button

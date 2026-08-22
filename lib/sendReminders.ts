@@ -1,6 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail, emailErrorReason } from "./email";
-import { formatSlotLabel } from "./slots";
+import { KST_NOTICE, formatSlotLabel } from "./slots";
 
 /** 응답이 없을 때 며칠 뒤 처음 독촉할지 */
 const FIRST_NUDGE_DAYS = 2;
@@ -198,6 +198,7 @@ export async function sendDayBeforeReminders(
       <p><b>${iv.candidate_name}</b>님(${iv.position}) 면접이 <b>내일</b>로 예정되어 있어 안내드립니다.</p>
       <p><b>${when}</b> · ${where}</p>
       <p>면접관: ${panel.map((p) => p.name).join(", ") || "-"}</p>
+      <p style="color:#888;font-size:12px">${KST_NOTICE}</p>
     `;
 
     // 한 명에게 실패해도 나머지 수신자에게는 계속 보낸다(면접이 내일이라 한 명이라도

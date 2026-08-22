@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { deriveDisplayStatus } from "./status";
+import { dDayLabel, deriveDisplayStatus } from "./status";
 
 const base = {
   status: "pending" as const,
@@ -62,5 +62,28 @@ describe("deriveDisplayStatus", () => {
     expect(
       deriveDisplayStatus({ ...base, status: "rescheduled", matched_slot: future, confirmation_sent_at: null }),
     ).toBe("coordinated");
+  });
+});
+
+describe("dDayLabel", () => {
+  // 시간대를 명시한 Z 문자열만 쓴다 — 실행 환경이 KST든 UTC든 같은 답이 나와야 한다.
+  // 2024-01-02T00:00:00Z = 한국 1/2(화) 09:00
+  const KST_JAN2_MORNING = "2024-01-02T00:00:00.000Z";
+
+  it("같은 한국 날짜면 D-0이다", () => {
+    // now가 UTC로는 1/1 23:00이지만 한국으로는 이미 1/2 08:00 — 같은 날이다.
+    expect(dDayLabel(KST_JAN2_MORNING, new Date("2024-01-01T23:00:00.000Z"))).toBe("D-0");
+  });
+
+  it("한국 날짜로 사흘 뒤면 D-3이다", () => {
+    expect(dDayLabel("2024-01-05T00:00:00.000Z", new Date(KST_JAN2_MORNING))).toBe("D-3");
+  });
+
+  it("한국 날짜가 지났으면 종료로 표시한다", () => {
+    expect(dDayLabel("2024-01-01T00:00:00.000Z", new Date(KST_JAN2_MORNING))).toBe("종료");
+  });
+
+  it("매칭 전이면 null이다", () => {
+    expect(dDayLabel(null)).toBeNull();
   });
 });

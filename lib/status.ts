@@ -1,3 +1,5 @@
+import { kstDayKey } from "./slots";
+
 export type DisplayStatus =
   | "awaiting_interviewer"
   | "awaiting_candidate"
@@ -90,14 +92,20 @@ export const STATUS_META: Record<
   },
 };
 
-/** 매칭된 슬롯까지 남은 일수를 D-day 형태로 표시. 매칭 전이면 null. */
-export function dDayLabel(matchedSlot: string | null): string | null {
+/**
+ * 매칭된 슬롯까지 남은 일수를 D-day 형태로 표시. 매칭 전이면 null.
+ *
+ * "며칠 남았는지"는 한국 날짜 기준으로 센다. 로컬 getter를 쓰면 보는 사람의
+ * 시간대에 따라 D-3이 D-2로 보이는 등 하루가 어긋난다(한국 아침 09:00 면접은
+ * UTC로는 아직 전날이다).
+ */
+export function dDayLabel(matchedSlot: string | null, now: Date = new Date()): string | null {
   if (!matchedSlot) return null;
-  const now = new Date();
-  const target = new Date(matchedSlot);
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const startOfTarget = new Date(target.getFullYear(), target.getMonth(), target.getDate());
-  const diffDays = Math.round((startOfTarget.getTime() - startOfToday.getTime()) / 86_400_000);
+  const diffDays = Math.round(
+    (Date.parse(`${kstDayKey(matchedSlot)}T00:00:00.000Z`) -
+      Date.parse(`${kstDayKey(now)}T00:00:00.000Z`)) /
+      86_400_000,
+  );
   if (diffDays < 0) return "종료";
   return `D-${diffDays}`;
 }

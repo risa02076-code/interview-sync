@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { kstHour } from "@/lib/slots";
 import {
   type InterviewRow,
   calendarColor,
@@ -9,8 +10,10 @@ import {
   CAL_COLOR_LABEL,
   HOURS,
   isSameDay,
+  isSameDayAsSlot,
   addDays,
   dayLabel,
+  kstNow,
 } from "./types";
 
 export function DayView({
@@ -21,21 +24,22 @@ export function DayView({
   onSelect: (iv: InterviewRow) => void;
 }) {
   const [dayOffset, setDayOffset] = useState(0);
-  const day = useMemo(() => addDays(new Date(), dayOffset), [dayOffset]);
+  // 날짜 이동과 시간대별 배치를 한국 시간 기준으로 계산한다.
+  const day = useMemo(() => addDays(kstNow(), dayOffset), [dayOffset]);
 
   const eventsByHour = useMemo(() => {
     const map = new Map<number, InterviewRow[]>();
     for (const h of HOURS) map.set(h, []);
     interviews
-      .filter((iv) => iv.matched_slot && isSameDay(new Date(iv.matched_slot), day))
+      .filter((iv) => iv.matched_slot && isSameDayAsSlot(day, iv.matched_slot))
       .forEach((iv) => {
-        const h = new Date(iv.matched_slot!).getHours();
+        const h = kstHour(iv.matched_slot!);
         if (map.has(h)) map.get(h)!.push(iv);
       });
     return map;
   }, [interviews, day]);
 
-  const isToday = isSameDay(day, new Date());
+  const isToday = isSameDay(day, kstNow());
 
   return (
     <div className="rounded-lg border bg-white">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { kstDateLabel, kstDayKey, kstTimeLabel } from "@/lib/slots";
 
 export type GridSlot = { key: string };
 
@@ -30,11 +31,13 @@ type SlotGridProps = {
   cellInfo?: (key: string) => CellInfo | undefined;
 };
 
-function pad2(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-/** ISO 슬롯 키들을 요일(열) × 시간(행) 그리드 좌표로 묶는다. */
+/**
+ * ISO 슬롯 키들을 요일(열) × 시간(행) 그리드 좌표로 묶는다.
+ *
+ * 날짜·시간은 반드시 한국 시간 기준으로 계산한다. Date의 로컬 getter를 쓰면 보는
+ * 사람의 시간대에 따라 같은 슬롯이 다른 칸에 놓인다 — 해외에 있는 후보자는 09:00
+ * 슬롯을 전날 밤 시간으로 보게 되고, 격자의 행·열 구조 자체가 어긋난다.
+ */
 function useGridShape(slots: GridSlot[]) {
   return useMemo(() => {
     const dayOrder: string[] = [];
@@ -43,14 +46,12 @@ function useGridShape(slots: GridSlot[]) {
     const cellKey = new Map<string, string>();
 
     for (const s of slots) {
-      const dt = new Date(s.key);
-      const dayId = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
-      const timeId = `${pad2(dt.getHours())}:${pad2(dt.getMinutes())}`;
+      const dayId = kstDayKey(s.key);
+      const timeId = kstTimeLabel(s.key);
 
       if (!dayLabels.has(dayId)) {
         dayOrder.push(dayId);
-        const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
-        dayLabels.set(dayId, `${dt.getMonth() + 1}/${dt.getDate()}(${DAY_NAMES[dt.getDay()]})`);
+        dayLabels.set(dayId, kstDateLabel(s.key));
       }
       if (!timeOrder.includes(timeId)) timeOrder.push(timeId);
       cellKey.set(`${dayId}|${timeId}`, s.key);

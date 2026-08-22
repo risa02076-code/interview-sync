@@ -1,11 +1,18 @@
 import { describe, it, expect } from "vitest";
 import {
+  KST_NOTICE,
   generateUpcomingSlots,
   formatSlotLabel,
   formatSlotRangeLabel,
   fitsInBusinessHours,
   interviewDurationMinutes,
   interviewsOverlap,
+  kstDateLabel,
+  kstDayKey,
+  kstHour,
+  kstMinute,
+  kstShifted,
+  kstTimeLabel,
   occupiedSlots,
 } from "./slots";
 
@@ -131,5 +138,31 @@ describe("formatSlotRangeLabel", () => {
   it("시작과 끝 시각을 함께 보여준다", () => {
     expect(formatSlotRangeLabel(NINE_AM, 60)).toBe("1/2(화) 09:00~10:00");
     expect(formatSlotRangeLabel(NINE_AM, 30)).toBe("1/2(화) 09:00~09:30");
+  });
+});
+
+describe("한국 시간 기준 조각 라벨", () => {
+  it("날짜·시간·시·분을 모두 한국 기준으로 낸다", () => {
+    expect(kstDateLabel(NINE_AM)).toBe("1/2(화)");
+    expect(kstTimeLabel(NINE_AM)).toBe("09:00");
+    expect(kstHour(NINE_AM)).toBe(9);
+    expect(kstMinute(NINE_THIRTY)).toBe(30);
+  });
+
+  it("UTC로는 전날인 시각도 한국 날짜로 낸다", () => {
+    // 2024-01-01T16:00:00Z = 한국 1/2(화) 01:00
+    expect(kstDateLabel("2024-01-01T16:00:00.000Z")).toBe("1/2(화)");
+    expect(kstTimeLabel("2024-01-01T16:00:00.000Z")).toBe("01:00");
+    expect(kstDayKey("2024-01-01T16:00:00.000Z")).toBe("2024-01-02");
+  });
+
+  it("kstShifted는 Date와 문자열을 모두 받는다", () => {
+    expect(kstShifted(NINE_AM).getUTCHours()).toBe(9);
+    expect(kstShifted(new Date(NINE_AM)).getUTCHours()).toBe(9);
+  });
+
+  it("기준 시간대를 밝히는 문장에 한국 시간이 명시돼 있다", () => {
+    expect(KST_NOTICE).toContain("한국 시간");
+    expect(KST_NOTICE).toContain("UTC+9");
   });
 });

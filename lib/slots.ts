@@ -56,22 +56,63 @@ export function generateUpcomingSlots(
  * 나오도록 로컬 getter 대신 명시적으로 9시간을 더해 UTC 필드를 읽는다.
  */
 export function formatSlotLabel(key: string): string {
-  const kst = new Date(new Date(key).getTime() + KST_OFFSET_MS);
-  const month = kst.getUTCMonth() + 1;
-  const date = kst.getUTCDate();
-  const day = DAY_NAMES[kst.getUTCDay()];
+  return `${kstDateLabel(key)} ${kstTimeLabel(key)}`;
+}
+
+/**
+ * 한국 시간 필드를 UTC getter로 읽기 위해 9시간 시프트한 Date를 만든다.
+ *
+ * 이 Date의 getUTCHours()/getUTCDate() 등이 곧 "한국 시간" 값이다. 반대로 이
+ * Date에 로컬 getter(getHours 등)를 쓰면 두 번 어긋나므로 절대 쓰면 안 된다.
+ * 브라우저에서도 같은 규칙이 필요하다 — 해외에 있는 후보자의 브라우저는 로컬
+ * 시간이 한국 시간이 아니라서, 로컬 getter로 라벨을 만들면 같은 슬롯이 다른
+ * 시각으로 보인다.
+ */
+export function kstShifted(value: Date | string): Date {
+  const base = typeof value === "string" ? new Date(value) : value;
+  return new Date(base.getTime() + KST_OFFSET_MS);
+}
+
+/** "8/25(월)" — 한국 시간 기준 날짜 라벨 */
+export function kstDateLabel(key: string): string {
+  const kst = kstShifted(key);
+  return `${kst.getUTCMonth() + 1}/${kst.getUTCDate()}(${DAY_NAMES[kst.getUTCDay()]})`;
+}
+
+/** "10:30" — 한국 시간 기준 시:분 라벨 */
+export function kstTimeLabel(key: string): string {
+  const kst = kstShifted(key);
   const hour = String(kst.getUTCHours()).padStart(2, "0");
   const minute = String(kst.getUTCMinutes()).padStart(2, "0");
-  return `${month}/${date}(${day}) ${hour}:${minute}`;
+  return `${hour}:${minute}`;
+}
+
+/** 한국 시간 기준 시(0~23). 캘린더에서 행 위치를 잡을 때 쓴다. */
+export function kstHour(key: string): number {
+  return kstShifted(key).getUTCHours();
+}
+
+/** 한국 시간 기준 분(0~59) */
+export function kstMinute(key: string): number {
+  return kstShifted(key).getUTCMinutes();
 }
 
 /**
  * 한국 날짜 기준 "YYYY-MM-DD" 키. 날짜별로 묶을 때 쓴다 — Date의 로컬 getter를
  * 쓰면 서버 타임존(UTC)에서 하루가 어긋난 채로 묶인다.
  */
-export function kstDayKey(key: string): string {
-  return new Date(new Date(key).getTime() + KST_OFFSET_MS).toISOString().slice(0, 10);
+export function kstDayKey(key: string | Date): string {
+  return kstShifted(key).toISOString().slice(0, 10);
 }
+
+/**
+ * 시간 표기의 기준 시간대를 밝히는 문장.
+ *
+ * 라벨 자체는 항상 한국 시간이지만, 그 사실이 적혀 있지 않으면 해외에 있는
+ * 후보자·면접관은 자기 지역 시간으로 읽는다. 시간을 보여주는 메일과 외부
+ * 화면에는 이 문장을 함께 넣는다.
+ */
+export const KST_NOTICE = "표시된 시간은 모두 한국 시간(KST, UTC+9) 기준입니다.";
 
 /**
  * 슬롯 격자의 간격. generateUpcomingSlots의 기본 stepMinutes와 같은 값이어야 한다.
@@ -133,7 +174,7 @@ export function fitsInBusinessHours(
   startHour = BUSINESS_START_HOUR,
   endHour = BUSINESS_END_HOUR,
 ): boolean {
-  const kst = new Date(new Date(startKey).getTime() + KST_OFFSET_MS);
+  const kst = kstShifted(startKey);
   const startMinutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
   return startMinutes >= startHour * 60 && startMinutes + durationMin <= endHour * 60;
 }

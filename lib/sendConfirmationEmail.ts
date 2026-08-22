@@ -1,6 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { sendEmail, emailErrorReason } from "./email";
-import { formatSlotRangeLabel, interviewDurationMinutes } from "./slots";
+import { KST_NOTICE, formatSlotRangeLabel, interviewDurationMinutes } from "./slots";
 import { generateToken } from "./token";
 import { checkSingleInterviewViolations } from "./checkConsistency";
 
@@ -112,6 +112,7 @@ export async function sendConfirmationEmail(
         `
           <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 일정이 아래와 같이 확정되었습니다.</p>
           <p><b>${when}</b> · ${roomName}</p>
+          <p style="color:#888;font-size:12px">${KST_NOTICE}</p>
           <p style="color:#888;font-size:12px">이 시간에 참석이 어려우시거나 문제가 있으면 리크루터에게 알려주세요.</p>
           ${rescheduleLink ? `<p><a href="${rescheduleLink}">일정 변경이 필요하신가요? 여기를 클릭해주세요</a></p>` : ""}
         `,
@@ -129,6 +130,7 @@ export async function sendConfirmationEmail(
         `
           <p><b>${interview.candidate_name}</b>님(${interview.position}) 면접 일정이 아래와 같이 확정되었습니다.</p>
           <p><b>${when}</b> · ${roomName}</p>
+          <p style="color:#888;font-size:12px">${KST_NOTICE}</p>
           <p style="color:#888;font-size:12px">이 시간에 참석이 어려우시거나 문제가 있으면 리크루터에게 알려주세요.</p>
         `,
       );

@@ -1,7 +1,7 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { generateToken } from "./token";
 import { sendEmail, emailErrorReason } from "./email";
-import { formatSlotLabel, interviewDurationMinutes } from "./slots";
+import { KST_NOTICE, formatSlotLabel, interviewDurationMinutes } from "./slots";
 import { recommendLeastConflictSlots, requiresRoom, type Interviewer, type Room } from "./matching";
 
 type Interview = {
@@ -75,6 +75,7 @@ export async function sendCandidateInvite(
             ? `일정을 <b>${whenList[0]}</b>로 제안드립니다.`
             : "가능한 시간을 안내드립니다."
         }</p>
+        <p style="color:#888;font-size:12px">${KST_NOTICE}</p>
         <p>아래 링크에서 ${isSingle ? "확인 후 확정해주세요." : "편한 시간을 선택해 확정해주세요."}</p>
         <p><a href="${link}">${link}</a></p>
       `,

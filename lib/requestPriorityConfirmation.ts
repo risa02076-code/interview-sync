@@ -1,7 +1,7 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { generateToken } from "./token";
 import { sendEmail, emailErrorReason } from "./email";
-import { formatSlotLabel } from "./slots";
+import { KST_NOTICE, formatSlotLabel } from "./slots";
 
 type Interview = {
   id: string;
@@ -58,6 +58,7 @@ export async function requestPriorityConfirmation(
           <p>안녕하세요, ${interviewer.name}님.</p>
           <p><b>${interview.candidate_name}</b>님(${interview.position})이 아래 순서로 면접 시간을 제안했습니다.</p>
           <p>${list}</p>
+          <p style="color:#888;font-size:12px">${KST_NOTICE}</p>
           <p>참석 가능한 시간을 모두 확인해주세요.</p>
           <p><a href="${link}">${link}</a></p>
         `,

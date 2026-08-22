@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useRef, use } from "react";
 import { Button } from "@/components/ui/button";
 import { SlotGrid } from "@/components/slot-grid";
+import { KST_NOTICE, kstDateLabel, kstDayKey } from "@/lib/slots";
 
 type Slot = { key: string; label: string };
 
@@ -26,20 +27,24 @@ const POLL_MS = 20_000;
 const RANK_MEDAL = ["🥇", "🥈", "🥉"];
 const MAX_RANKS = 3;
 
-const DAY_NAMES = ["일", "월", "화", "수", "목", "금", "토"];
-
-/** ISO 슬롯 키를 날짜별로 묶는다 — 날짜를 먼저 고르고 그 안에서 시간을 고르는 느낌을 주기 위함 */
+/**
+ * ISO 슬롯 키를 날짜별로 묶는다 — 날짜를 먼저 고르고 그 안에서 시간을 고르는 느낌을 주기 위함.
+ *
+ * 이 화면은 후보자와 면접관이 여는 화면이고, 해외에 있을 수 있다. 그래서 날짜
+ * 묶음과 라벨을 모두 한국 시간 기준으로 고정한다 — 로컬 시간으로 계산하면
+ * 08/25 09:00 슬롯이 08/24 밤으로 보이고, 그걸 보고 고른 시간이 실제로는 다른
+ * 시간이 된다.
+ */
 function groupByDay(slots: Slot[]) {
   const order: string[] = [];
   const labels = new Map<string, string>();
   const items = new Map<string, Slot[]>();
 
   for (const slot of slots) {
-    const dt = new Date(slot.key);
-    const dayKey = `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`;
+    const dayKey = kstDayKey(slot.key);
     if (!items.has(dayKey)) {
       order.push(dayKey);
-      labels.set(dayKey, `${dt.getMonth() + 1}/${dt.getDate()}(${DAY_NAMES[dt.getDay()]})`);
+      labels.set(dayKey, kstDateLabel(slot.key));
       items.set(dayKey, []);
     }
     items.get(dayKey)!.push(slot);
@@ -348,6 +353,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
         <div>
           <h1 className="text-xl font-bold">{ctx.name}님, 가능한 시간을 모두 알려주세요</h1>
           <p className="text-sm text-muted-foreground">{ctx.subtitle}</p>
+          <p className="text-xs text-muted-foreground">{KST_NOTICE}</p>
         </div>
         {ctx.currentSlotLabel ? (
           <p className="text-sm">
@@ -397,6 +403,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
         <div>
           <h1 className="text-xl font-bold">{ctx.name}님, 다음 주 가능한 시간을 알려주세요</h1>
           <p className="text-sm text-muted-foreground">{ctx.subtitle}</p>
+          <p className="text-xs text-muted-foreground">{KST_NOTICE}</p>
         </div>
         <p className="text-sm">
           이번 주에 제안된 시간이 모두 어려우시다고 하셔서, 다음 주 중 참석 가능한 시간을 여쭤봅니다.
@@ -470,6 +477,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
           <p className="text-sm text-muted-foreground">
             {ctx.candidateName}님({ctx.position}) 후보자가 제출한 순위입니다.
           </p>
+          <p className="text-xs text-muted-foreground">{KST_NOTICE}</p>
         </div>
 
         <p className="text-sm">
@@ -522,6 +530,7 @@ export default function RespondPage({ params }: { params: Promise<{ token: strin
           {isCandidate ? "님, 면접 가능한 일정을 선택해주세요" : "님, 면접 불가능한 시간을 알려주세요"}
         </h1>
         <p className="text-sm text-muted-foreground">{ctx.subtitle}</p>
+        <p className="text-xs text-muted-foreground">{KST_NOTICE}</p>
       </div>
 
       <p className="text-sm">
