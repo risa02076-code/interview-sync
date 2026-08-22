@@ -64,3 +64,91 @@ export function formatSlotLabel(key: string): string {
   const minute = String(kst.getUTCMinutes()).padStart(2, "0");
   return `${month}/${date}(${day}) ${hour}:${minute}`;
 }
+
+/**
+ * 슬롯 격자의 간격. generateUpcomingSlots의 기본 stepMinutes와 같은 값이어야 한다.
+ */
+export const SLOT_STEP_MINUTES = 30;
+
+/** 업무시간(한국 기준). generateUpcomingSlots의 기본값과 같은 값이어야 한다. */
+export const BUSINESS_START_HOUR = 9;
+export const BUSINESS_END_HOUR = 18;
+
+/**
+ * 면접 유형별 실제 소요시간(분). 슬롯 격자(30분)의 배수여야 한다.
+ *
+ * 이 값이 없으면 시스템은 면접을 "격자 위의 한 점"으로만 다루게 되고, 10:00에
+ * 확정된 1시간 면접의 10:30이 여전히 비어 있는 것으로 취급된다 — 같은 면접관에게
+ * 10:30 면접이 또 잡히고, 매칭도 정합성 검사도 슬롯 문자열이 다르니 겹침으로
+ * 보지 않는다. 소요시간을 여기 한 곳에 두고 점유·탐색·검사가 모두 이 값을
+ * 기준으로 계산하게 해서 그 구멍을 막는다.
+ */
+export const INTERVIEW_DURATION_MINUTES: Record<string, number> = {
+  "1차 대면": 60,
+  "2차 대면": 60,
+  온라인: 30,
+  전화: 30,
+};
+
+/** 정의되지 않은 유형은 격자 한 칸으로 본다(기존 동작). */
+export function interviewDurationMinutes(interviewType: string): number {
+  return INTERVIEW_DURATION_MINUTES[interviewType] ?? SLOT_STEP_MINUTES;
+}
+
+/** 겹침 후보를 조회할 시간 창을 정할 때 쓴다(가장 긴 면접보다 앞선 건은 겹칠 수 없다). */
+export const MAX_INTERVIEW_DURATION_MINUTES = Math.max(
+  SLOT_STEP_MINUTES,
+  ...Object.values(INTERVIEW_DURATION_MINUTES),
+);
+
+/**
+ * 이 시간에 시작하는 면접이 실제로 점유하는 슬롯 키 전체를 반환한다.
+ * 30분 면접이면 [시작], 1시간 면접이면 [시작, 시작+30분].
+ */
+export function occupiedSlots(startKey: string, durationMin: number): string[] {
+  const count = Math.max(1, Math.ceil(durationMin / SLOT_STEP_MINUTES));
+  const start = new Date(startKey).getTime();
+  return Array.from({ length: count }, (_, i) =>
+    new Date(start + i * SLOT_STEP_MINUTES * 60_000).toISOString(),
+  );
+}
+
+/**
+ * 면접이 시작부터 끝까지 업무시간 안에 들어오는지. 17:30에 시작하는 1시간 면접은
+ * 18:30에 끝나므로 확정 대상이 될 수 없다 — 점유 슬롯만 확인하면 이 경우를
+ * 놓치기 때문에(18:00 슬롯은 애초에 격자에 없어서 "비어 있음"으로 보인다) 시각을
+ * 직접 계산해 판단한다.
+ */
+export function fitsInBusinessHours(
+  startKey: string,
+  durationMin: number,
+  startHour = BUSINESS_START_HOUR,
+  endHour = BUSINESS_END_HOUR,
+): boolean {
+  const kst = new Date(new Date(startKey).getTime() + KST_OFFSET_MS);
+  const startMinutes = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  return startMinutes >= startHour * 60 && startMinutes + durationMin <= endHour * 60;
+}
+
+/**
+ * 두 면접이 시간상 겹치는지. 슬롯 문자열이 같은지가 아니라 구간이 겹치는지를 본다
+ * (10:00 1시간 면접과 10:30 면접은 문자열은 다르지만 겹친다). 끝나는 시각과
+ * 시작하는 시각이 맞닿는 경우는 겹침이 아니다.
+ */
+export function interviewsOverlap(
+  aStartKey: string,
+  aDurationMin: number,
+  bStartKey: string,
+  bDurationMin: number,
+): boolean {
+  const aStart = new Date(aStartKey).getTime();
+  const bStart = new Date(bStartKey).getTime();
+  return aStart < bStart + bDurationMin * 60_000 && bStart < aStart + aDurationMin * 60_000;
+}
+
+/** 후보자·면접관이 끝나는 시각까지 알 수 있도록 "8/25(월) 10:00~11:00" 형태로 만든다. */
+export function formatSlotRangeLabel(startKey: string, durationMin: number): string {
+  const endKey = new Date(new Date(startKey).getTime() + durationMin * 60_000).toISOString();
+  const endTime = formatSlotLabel(endKey).split(" ")[1];
+  return `${formatSlotLabel(startKey)}~${endTime}`;
+}

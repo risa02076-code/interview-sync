@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { generateUpcomingSlots, formatSlotLabel } from "./slots";
+import {
+  generateUpcomingSlots,
+  formatSlotLabel,
+  formatSlotRangeLabel,
+  fitsInBusinessHours,
+  interviewDurationMinutes,
+  interviewsOverlap,
+  occupiedSlots,
+} from "./slots";
 
 // 2024-01-01 00:00 KST = 2023-12-31T15:00:00Z. 타임존이 명시된(Z) 문자열을 써야
 // 이 테스트가 어느 시간대에서 실행되든(로컬 개발 환경이든 UTC 서버든) 항상 같은
@@ -50,5 +58,78 @@ describe("formatSlotLabel", () => {
     // 2024-01-01T16:00:00Z = 한국 시간 1/2(화) 01:00 — UTC로는 여전히 1/1이지만
     // 한국 시간으로는 이미 날짜가 넘어간 케이스.
     expect(formatSlotLabel("2024-01-01T16:00:00.000Z")).toBe("1/2(화) 01:00");
+  });
+});
+
+// 09:00 KST
+const NINE_AM = "2024-01-02T00:00:00.000Z";
+// 09:30 KST
+const NINE_THIRTY = "2024-01-02T00:30:00.000Z";
+// 10:00 KST
+const TEN_AM = "2024-01-02T01:00:00.000Z";
+// 17:30 KST — 마지막 슬롯
+const FIVE_THIRTY_PM = "2024-01-02T08:30:00.000Z";
+
+describe("interviewDurationMinutes", () => {
+  it("대면 면접은 1시간, 온라인·전화는 30분이다", () => {
+    expect(interviewDurationMinutes("1차 대면")).toBe(60);
+    expect(interviewDurationMinutes("2차 대면")).toBe(60);
+    expect(interviewDurationMinutes("온라인")).toBe(30);
+    expect(interviewDurationMinutes("전화")).toBe(30);
+  });
+
+  it("정의되지 않은 유형은 격자 한 칸(30분)으로 본다", () => {
+    expect(interviewDurationMinutes("정의되지 않은 유형")).toBe(30);
+  });
+});
+
+describe("occupiedSlots", () => {
+  it("30분 면접은 시작 슬롯 하나만 차지한다", () => {
+    expect(occupiedSlots(NINE_AM, 30)).toEqual([NINE_AM]);
+  });
+
+  it("1시간 면접은 시작 슬롯과 그다음 슬롯을 함께 차지한다", () => {
+    expect(occupiedSlots(NINE_AM, 60)).toEqual([NINE_AM, NINE_THIRTY]);
+  });
+
+  it("격자에 딱 맞지 않는 소요시간은 올림해서 슬롯을 채운다", () => {
+    expect(occupiedSlots(NINE_AM, 45)).toEqual([NINE_AM, NINE_THIRTY]);
+  });
+});
+
+describe("fitsInBusinessHours", () => {
+  it("업무시간 안에서 끝나는 면접은 통과한다", () => {
+    expect(fitsInBusinessHours(NINE_AM, 60)).toBe(true);
+    expect(fitsInBusinessHours(FIVE_THIRTY_PM, 30)).toBe(true);
+  });
+
+  it("마지막 슬롯에서 시작하는 1시간 면접은 업무시간을 넘긴다", () => {
+    // 17:30 + 60분 = 18:30 > 18:00
+    expect(fitsInBusinessHours(FIVE_THIRTY_PM, 60)).toBe(false);
+  });
+});
+
+describe("interviewsOverlap", () => {
+  it("1시간 면접과 30분 뒤 면접은 슬롯 문자열이 달라도 겹친다", () => {
+    expect(interviewsOverlap(NINE_AM, 60, NINE_THIRTY, 30)).toBe(true);
+  });
+
+  it("30분 면접 두 건이 30분 간격이면 겹치지 않는다", () => {
+    expect(interviewsOverlap(NINE_AM, 30, NINE_THIRTY, 30)).toBe(false);
+  });
+
+  it("끝나는 시각과 시작 시각이 맞닿는 경우는 겹침이 아니다", () => {
+    expect(interviewsOverlap(NINE_AM, 60, TEN_AM, 60)).toBe(false);
+  });
+
+  it("겹침 판정은 순서를 바꿔도 같다", () => {
+    expect(interviewsOverlap(NINE_THIRTY, 30, NINE_AM, 60)).toBe(true);
+  });
+});
+
+describe("formatSlotRangeLabel", () => {
+  it("시작과 끝 시각을 함께 보여준다", () => {
+    expect(formatSlotRangeLabel(NINE_AM, 60)).toBe("1/2(화) 09:00~10:00");
+    expect(formatSlotRangeLabel(NINE_AM, 30)).toBe("1/2(화) 09:00~09:30");
   });
 });
