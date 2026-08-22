@@ -1,0 +1,37 @@
+# 코드를 push하거나 PR을 열면 자동으로 검증한다.
+#
+# 이 파일이 없던 동안은 `npm test`를 사람이 직접 입력할 때만 테스트가 돌았다 —
+# 고치고 실행을 잊으면 검증이 아예 일어나지 않는 상태였다. 여기서 lint,
+# 타입 검사, 테스트를 매 push마다 강제한다.
+#
+# 다만 이 워크플로가 실패해도 배포가 자동으로 멈추지는 않으므로,
+# package.json의 prebuild(= 빌드 직전 테스트 실행)가 두 번째 방어선이 된다.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      # package-lock.json 그대로 설치한다(개발 환경과 같은 버전으로 검증하기 위함).
+      - run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
