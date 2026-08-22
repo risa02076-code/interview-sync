@@ -66,6 +66,14 @@ export function formatSlotLabel(key: string): string {
 }
 
 /**
+ * 한국 날짜 기준 "YYYY-MM-DD" 키. 날짜별로 묶을 때 쓴다 — Date의 로컬 getter를
+ * 쓰면 서버 타임존(UTC)에서 하루가 어긋난 채로 묶인다.
+ */
+export function kstDayKey(key: string): string {
+  return new Date(new Date(key).getTime() + KST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/**
  * 슬롯 격자의 간격. generateUpcomingSlots의 기본 stepMinutes와 같은 값이어야 한다.
  */
 export const SLOT_STEP_MINUTES = 30;
