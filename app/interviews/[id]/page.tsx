@@ -82,6 +82,19 @@ const KIND_LABEL: Record<HistoryEntry["kind"], string> = {
 
 const RANK_MEDAL = ["🥇", "🥈", "🥉"];
 
+/**
+ * 응답 현황을 다시 읽어오는 주기.
+ *
+ * Supabase Realtime을 쓰지 않는다. 테이블별로 Realtime을 켜고 RLS까지 맞춰야 하고,
+ * 구독 확인 직후의 변경이 유실되는 경쟁 조건과 라우트 이동 시 옛 채널이 남는 문제가
+ * 알려져 있다. 이 화면은 담당자만 보고 응답은 분 단위로 들어오므로, 실패해도 다음
+ * 주기에 저절로 복구되는 폴링이 더 적합하다(응답 화면도 같은 방식을 쓴다).
+ *
+ * 갱신 경로를 load() 하나로만 두었으니, 나중에 Realtime으로 갈아끼울 때 이 훅만
+ * 바꾸면 된다.
+ */
+const REFRESH_MS = 15_000;
+
 const STAGE_LABEL: Record<Stage, string> = {
   created: "등록됨 — 면접관 문의 전",
   interviewer_pending: "면접관 응답 대기 중",
@@ -122,6 +135,16 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     fetch("/api/slots")
       .then((res) => res.json())
       .then(setAllSlots);
+  }, [load]);
+
+  // 후보자·면접관이 응답을 업데이트하면 히트맵도 따라가야 한다. 펼쳐 본 슬롯은
+  // 키(inspectedSlot)로 들고 있으므로 갱신돼도 열린 상태가 유지된다.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      // 다른 탭을 보고 있는 동안은 불필요한 조회를 하지 않는다.
+      if (document.visibilityState === "visible") load();
+    }, REFRESH_MS);
+    return () => clearInterval(timer);
   }, [load]);
 
   const needsRoom = interview ? requiresRoom(interview.interview_type) : false;
@@ -620,8 +643,8 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
             <p className="text-sm font-semibold">응답 현황 히트맵</p>
             <p className="text-xs text-muted-foreground">
               면접관 응답 {interview.interviewerProgress.submitted}/
-              {interview.interviewerProgress.total} · 면접 소요시간 {durationMinutes}분 기준.
-              시간을 누르면 누가 가능한지 아래에 나옵니다.
+              {interview.interviewerProgress.total} · 면접 소요시간 {durationMinutes}분 기준 ·{" "}
+              {REFRESH_MS / 1000}초마다 자동 갱신. 시간을 누르면 누가 가능한지 아래에 나옵니다.
             </p>
           </div>
 
@@ -750,8 +773,9 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
             전체 응답 히스토리 ({interview.history.length}건) {historyOpen ? "숨기기 ▲" : "보기 ▼"}
           </button>
           <p className="text-xs text-muted-foreground">
-            면접관이 언제 무엇을 답했는지, 후보자가 순위를 어떻게 제출했는지, 재조율 요청이
-            있었는지를 시간순으로 모두 보여줍니다.
+            위 히트맵이 &ldquo;지금 상태&rdquo;라면, 이 기록은 &ldquo;언제 무엇을
+            답했는지&rdquo;입니다. 면접관 응답, 후보자 순위 제출, 재조율 요청을 시간순으로
+            모두 남깁니다.
           </p>
           {historyOpen && (
             <div className="flex flex-col gap-2">
