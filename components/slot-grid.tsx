@@ -5,13 +5,23 @@ import { kstDateLabel, kstDayKey, kstTimeLabel } from "@/lib/slots";
 
 export type GridSlot = { key: string };
 
-type CellInfo = {
+export type CellInfo = {
   key: string;
   /** 이 슬롯에 겹치는 인원 수 (히트맵용). 지정하지 않으면 색을 칠하지 않는다. */
   conflictCount?: number;
   disabled?: boolean;
   /** 이미 응답을 마친 다른 사람이 이 시간을 불가능하다고 표시했음을 참고용으로 보여준다 */
   warn?: boolean;
+  /**
+   * 이 칸의 값이 확정이 아니라 추정임을 사선 무늬로 표시한다(미응답자가 있을 때).
+   * 색(conflictCount)과 별도 채널이어야 한다 — 하나로 합치면 "가능하다고 답한 것"과
+   * "아직 답하지 않은 것"이 같은 색이 되어, 추정이 확정처럼 보인다.
+   */
+  estimated?: boolean;
+  /** 칸 위에 겹쳐 보여줄 짧은 표식(후보자 순위 메달 등) */
+  mark?: string;
+  /** 툴팁에 덧붙일 설명 */
+  hint?: string;
 };
 
 type SlotGridProps = {
@@ -29,6 +39,13 @@ type SlotGridProps = {
   /** 인원수 기준 충돌 히트맵을 표시할 때, 정규화 기준이 되는 전체 인원 수 */
   panelSize?: number;
   cellInfo?: (key: string) => CellInfo | undefined;
+  /**
+   * 보기 전용. 칠하는 화면이 아니라 "눌러서 상세를 보는" 화면에서 쓴다.
+   * 드래그를 끄고, 선택 표시를 배경 대신 테두리로 해서 히트맵 색을 가리지 않는다.
+   */
+  readOnly?: boolean;
+  /** roomy는 표식(mark)이 들어갈 수 있도록 칸을 키운다 */
+  size?: "compact" | "roomy";
 };
 
 /**
@@ -72,6 +89,22 @@ function heatColor(conflictCount: number, panelSize: number): string {
   return `rgba(${r},${g},${b},${0.15 + ratio * 0.45})`;
 }
 
+/**
+ * 칸의 배경색. 색은 "불가능하다고 답한 인원 수"만 나타낸다.
+ * panelSize가 없거나 conflictCount가 없으면 색을 칠하지 않는다.
+ */
+export function cellTint(info: CellInfo | undefined, panelSize: number | undefined): string | undefined {
+  if (panelSize && info?.conflictCount !== undefined) return heatColor(info.conflictCount, panelSize);
+  if (info?.warn) return "rgba(245,158,11,0.16)";
+  return undefined;
+}
+
+/** 추정 구간에 겹칠 사선 무늬. 색과 독립된 채널이라 함께 표시된다. */
+export function cellStripe(info: CellInfo | undefined): string | undefined {
+  if (!info?.estimated) return undefined;
+  return "repeating-linear-gradient(45deg, rgba(100,116,139,0.28) 0 2px, transparent 2px 5px)";
+}
+
 export function SlotGrid({
   slots,
   selected,
@@ -79,6 +112,8 @@ export function SlotGrid({
   allowDrag = true,
   panelSize,
   cellInfo,
+  readOnly = false,
+  size = "compact",
 }: SlotGridProps) {
   const { dayOrder, dayLabels, timeOrder, cellKey } = useGridShape(slots);
   const dragState = useRef<{ paintValue: boolean } | null>(null);
@@ -96,7 +131,7 @@ export function SlotGrid({
   }
 
   function handleEnter(key: string) {
-    if (!allowDrag || !isPointerDown || !dragState.current) return;
+    if (readOnly || !allowDrag || !isPointerDown || !dragState.current) return;
     paint(key, dragState.current.paintValue);
   }
 
@@ -127,13 +162,17 @@ export function SlotGrid({
                 if (!key) return <td key={d} />;
                 const info = cellInfo?.(key);
                 const isSelected = selected.has(key);
-                const heat =
-                  panelSize && info?.conflictCount !== undefined
-                    ? heatColor(info.conflictCount, panelSize)
-                    : undefined;
-                const warnColor = !heat && info?.warn ? "rgba(245,158,11,0.16)" : undefined;
-                const tint = heat ?? warnColor;
-                const title = info?.disabled ? undefined : info?.warn ? `${t} · 다른 면접관 이미 불가능` : t;
+                const tint = cellTint(info, panelSize);
+                const stripe = cellStripe(info);
+                const isWarn = tint === "rgba(245,158,11,0.16)";
+                // 보기 전용에서는 선택을 배경 대신 테두리로 표시한다 — 배경을 덮으면
+                // 정작 보려던 히트맵 색이 가려진다.
+                const fillSelected = isSelected && !readOnly;
+                const title = info?.disabled
+                  ? undefined
+                  : [t, info?.hint, info?.estimated ? "일부 미응답 — 추정" : null]
+                      .filter(Boolean)
+                      .join(" · ");
 
                 return (
                   <td key={d} className="p-0.5">
@@ -143,17 +182,30 @@ export function SlotGrid({
                       disabled={info?.disabled}
                       onMouseDown={() => !info?.disabled && handleDown(key)}
                       onMouseEnter={() => !info?.disabled && handleEnter(key)}
-                      className={`h-5 w-8 rounded-sm border transition-colors ${
+                      className={`${
+                        size === "roomy" ? "h-7 w-12 text-[11px]" : "h-5 w-8"
+                      } rounded-sm border leading-none transition-colors ${
                         info?.disabled
                           ? "cursor-not-allowed border-border bg-muted"
-                          : isSelected
+                          : fillSelected
                             ? "border-primary bg-primary text-primary-foreground"
-                            : warnColor
-                              ? "border-amber-300 bg-background"
-                              : "border-border bg-background hover:border-primary/50"
+                            : isSelected
+                              ? "bg-background"
+                              : isWarn
+                                ? "border-amber-300 bg-background"
+                                : "border-border bg-background hover:border-primary/50"
                       }`}
-                      style={!isSelected && tint ? { backgroundColor: tint } : undefined}
-                    />
+                      style={{
+                        ...(!fillSelected && (tint || stripe)
+                          ? { backgroundColor: tint, backgroundImage: stripe }
+                          : {}),
+                        ...(isSelected && !fillSelected
+                          ? { outline: "2px solid hsl(var(--foreground))", outlineOffset: "-1px" }
+                          : {}),
+                      }}
+                    >
+                      {info?.mark}
+                    </button>
                   </td>
                 );
               })}
