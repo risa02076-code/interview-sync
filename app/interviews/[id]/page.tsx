@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatSlotLabel } from "@/lib/slots";
+import { formatSlotLabel, formatSlotRangeLabel, interviewDurationMinutes } from "@/lib/slots";
 import { deriveDisplayStatus, dDayLabel, STATUS_META } from "@/lib/status";
 import { requiresRoom } from "@/lib/matching";
 import { SlotGrid, type GridSlot } from "@/components/slot-grid";
+import { buildResponseMatrix, heatInputs, type SlotState } from "@/lib/responseMatrix";
 import { groupBusySlotsByDay, formatRespondedAt } from "@/lib/busySlots";
 
 type PriorityConfirmRecord = {
@@ -107,6 +108,8 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
   const [manualSlot, setManualSlot] = useState<string | null>(null);
   const [expandedPanelId, setExpandedPanelId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // 히트맵에서 눌러 본 슬롯. 폴링으로 데이터가 갱신돼도 펼친 상태가 리셋되지 않도록 키로 들고 있는다.
+  const [inspectedSlot, setInspectedSlot] = useState<string | null>(null);
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -134,6 +137,42 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     }
     return map;
   }, [interview, allSlots, needsRoom]);
+
+  const durationMinutes = interview ? interviewDurationMinutes(interview.interview_type) : 30;
+
+  /**
+   * 응답 현황 히트맵의 원본. 계산은 lib/responseMatrix.ts의 순수 함수가 하고,
+   * 여기서는 화면에 있는 데이터를 그 입력 형태로 옮기기만 한다.
+   */
+  const matrix = useMemo(() => {
+    if (!interview) return null;
+    // /api/slots는 지금 기준 앞으로의 영업일만 만든다 — 지난 라운드에 답한 시간이
+    // 격자에서 잘리지 않도록 히스토리에 등장한 슬롯을 모두 모아 축에 넣는다.
+    const historySlots = interview.history.flatMap((h) => [
+      ...(h.confirmSlots ?? []),
+      ...(h.answeredSlots ?? []),
+      ...(h.answeredBusySlots ?? []),
+      ...(h.answeredPreferredSlots ?? []),
+    ]);
+    return buildResponseMatrix({
+      interviewers: interview.panelDetail.map((p) => ({
+        id: p.id,
+        name: p.name,
+        responded: p.responded,
+        busy_slots: p.busy_slots,
+      })),
+      rooms: interview.rooms,
+      preferredSlots: interview.preferred_slots ?? [],
+      matchedSlot: interview.matched_slot,
+      gridSlots: allSlots.map((s) => s.key),
+      historySlots,
+      needsRoom,
+      durationMinutes,
+    });
+  }, [interview, allSlots, needsRoom, durationMinutes]);
+
+  const inspected: SlotState | null =
+    inspectedSlot && matrix ? matrix.states.get(inspectedSlot) ?? null : null;
 
   /**
    * 클릭한 슬롯 하나에 대해 "면접관별 가능 여부"와 "회의실 가능 여부"를 따로 보여주기
@@ -572,6 +611,132 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
             * 는 아직 실제 확인 답변이 없어 현재 캘린더 기준으로 추정한 값입니다. *가 없으면 면접관이
             그 순간에 실제로 &ldquo;가능/불가능&rdquo;이라고 답한 기록입니다.
           </p>
+        </div>
+      )}
+
+      {matrix && matrix.slots.length > 0 && (
+        <div className="flex flex-col gap-3 rounded-md border p-3">
+          <div>
+            <p className="text-sm font-semibold">응답 현황 히트맵</p>
+            <p className="text-xs text-muted-foreground">
+              면접관 응답 {interview.interviewerProgress.submitted}/
+              {interview.interviewerProgress.total} · 면접 소요시간 {durationMinutes}분 기준.
+              시간을 누르면 누가 가능한지 아래에 나옵니다.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <span
+                className="inline-block h-3 w-5 rounded-sm border"
+                style={{ backgroundColor: "rgba(34,197,94,0.18)" }}
+              />
+              답변 기준 전원 가능
+            </span>
+            <span className="flex items-center gap-1">
+              <span
+                className="inline-block h-3 w-5 rounded-sm border"
+                style={{ backgroundColor: "rgba(239,68,8,0.6)" }}
+              />
+              불가능하다고 답한 인원 많음
+            </span>
+            <span className="flex items-center gap-1">
+              <span
+                className="inline-block h-3 w-5 rounded-sm border"
+                style={{
+                  backgroundImage:
+                    "repeating-linear-gradient(45deg, rgba(100,116,139,0.28) 0 2px, transparent 2px 5px)",
+                }}
+              />
+              미응답 있음 — 추정
+            </span>
+            <span>확정 ● / 후보자 순위 🥇🥈🥉</span>
+          </div>
+
+          <SlotGrid
+            slots={matrix.slots.map((key) => ({ key }))}
+            selected={inspectedSlot ? new Set([inspectedSlot]) : new Set()}
+            onPaint={(key) => setInspectedSlot((cur) => (cur === key ? null : key))}
+            allowDrag={false}
+            readOnly
+            size="roomy"
+            panelSize={interview.panelDetail.length + (needsRoom ? 1 : 0)}
+            cellInfo={(key) => {
+              const s = matrix.states.get(key);
+              if (!s) return { key };
+              const { conflictCount, estimated } = heatInputs(s);
+              return {
+                key,
+                conflictCount,
+                estimated,
+                mark: s.occupiedByMatch ? "●" : s.candidateRank ? RANK_MEDAL[s.candidateRank - 1] : undefined,
+                hint: [
+                  s.occupiedByMatch ? "확정된 면접 시간" : null,
+                  s.candidateRank ? `후보자 ${s.candidateRank}순위` : null,
+                  s.unavailable.length ? `불가능 ${s.unavailable.length}명` : null,
+                  s.unknown.length ? `미응답 ${s.unknown.length}명` : null,
+                  needsRoom && !s.roomFree ? "회의실 없음" : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              };
+            }}
+          />
+
+          {inspected ? (
+            <div className="flex flex-col gap-1.5 rounded-md bg-muted/50 p-2.5 text-xs">
+              <p className="text-sm font-semibold">
+                <span className="font-mono font-normal">
+                  {formatSlotRangeLabel(inspected.slot, durationMinutes)}
+                </span>
+                {inspected.isMatchedStart && <span className="ml-2 text-primary">확정된 시간</span>}
+              </p>
+              <p>
+                <span className="text-muted-foreground">가능(답변 확인) </span>
+                {inspected.available.join(", ") || "—"}
+              </p>
+              <p>
+                <span className="text-muted-foreground">불가능(답변 확인) </span>
+                <span className={inspected.unavailable.length ? "text-destructive" : undefined}>
+                  {inspected.unavailable.join(", ") || "—"}
+                </span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">미응답(추정) </span>
+                <span className={inspected.unknown.length ? "text-amber-600" : undefined}>
+                  {inspected.unknown.join(", ") || "—"}
+                </span>
+              </p>
+              {inspected.ambiguous.length > 0 && (
+                <p className="text-muted-foreground">
+                  확정된 면접이 차지하는 시간이라, {inspected.ambiguous.join(", ")}님의 표시가 본인
+                  사정인지 이 면접 때문인지 구분할 수 없습니다.
+                </p>
+              )}
+              {needsRoom && (
+                <p>
+                  <span className="text-muted-foreground">회의실 </span>
+                  {inspected.roomFree ? "사용 가능한 방 있음" : "전부 사용 중"}
+                </p>
+              )}
+              {inspected.startable && inspected.unknown.length > 0 && (
+                <p className="text-amber-600">
+                  조건은 통과하지만, 아직 답하지 않은 사람이 있어 &ldquo;가능&rdquo;의 근거가
+                  답변이 아니라 미응답입니다.
+                </p>
+              )}
+              {!inspected.startable && (
+                <p className="text-muted-foreground">
+                  이 시간에 시작하면 {durationMinutes}분을 확보할 수 없어 자동 매칭 후보에서
+                  제외됩니다.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              시간을 누르면 그 시간의 가능·불가능·미응답 명단이 여기에 표시됩니다.
+            </p>
+          )}
         </div>
       )}
 
