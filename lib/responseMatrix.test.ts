@@ -74,6 +74,60 @@ describe("확정 구간의 모호함", () => {
     expect(states.get(NINE_30)!.ambiguous).toEqual(["배지훈"]);
   });
 
+  it("참석 가능하다고 직접 답한 기록이 있으면 확정 구간도 모호하지 않고 available이다", () => {
+    const { states } = build({
+      matchedSlot: NINE,
+      interviewers: [
+        person({ name: "배지훈", busy_slots: [NINE, NINE_30], attendanceConfirmedStarts: [NINE] }),
+      ],
+    });
+    expect(states.get(NINE)!.available).toEqual(["배지훈"]);
+    expect(states.get(NINE)!.ambiguous).toEqual([]);
+  });
+
+  it("참석 가능 답변은 시작 슬롯 하나지만 면접 구간 전체(뒷 30분)까지 덮는다", () => {
+    const { states } = build({
+      matchedSlot: NINE,
+      interviewers: [
+        person({ name: "배지훈", busy_slots: [NINE, NINE_30], attendanceConfirmedStarts: [NINE] }),
+      ],
+    });
+    expect(states.get(NINE_30)!.available).toEqual(["배지훈"]);
+    expect(states.get(NINE_30)!.ambiguous).toEqual([]);
+  });
+
+  it("같은 패널이라도 답한 사람만 모호함이 풀린다", () => {
+    const { states } = build({
+      matchedSlot: NINE,
+      interviewers: [
+        person({ name: "배지훈", busy_slots: [NINE, NINE_30], attendanceConfirmedStarts: [NINE] }),
+        person({ name: "오세훈", busy_slots: [NINE, NINE_30] }),
+      ],
+    });
+    expect(states.get(NINE)!.available).toEqual(["배지훈"]);
+    expect(states.get(NINE)!.ambiguous).toEqual(["오세훈"]);
+  });
+
+  it("다른 시간에 참석 가능이라고 답한 기록은 확정 구간의 모호함을 풀지 않는다", () => {
+    const { states } = build({
+      matchedSlot: NINE,
+      interviewers: [
+        person({ name: "배지훈", busy_slots: [NINE, NINE_30], attendanceConfirmedStarts: [TEN_30] }),
+      ],
+    });
+    expect(states.get(NINE)!.ambiguous).toEqual(["배지훈"]);
+  });
+
+  it("확정 구간 밖에서는 참석 가능 답변이 busy_slots를 덮어쓰지 않는다", () => {
+    // 답변 이후에 본인 사정이 생겨 busy_slots에 다시 들어갔을 수 있다. 확정된
+    // 구간이 아니라면 busy_slots가 더 최신이므로 그대로 불가능으로 본다.
+    const { states } = build({
+      matchedSlot: null,
+      interviewers: [person({ name: "배지훈", busy_slots: [TEN], attendanceConfirmedStarts: [TEN] })],
+    });
+    expect(states.get(TEN)!.unavailable).toEqual(["배지훈"]);
+  });
+
   it("확정 구간 밖은 그대로 unavailable로 분류한다", () => {
     const { states } = build({
       matchedSlot: NINE,

@@ -183,6 +183,9 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
         name: p.name,
         responded: p.responded,
         busy_slots: p.busy_slots,
+        // 확정된 시간에 대해 "참석 가능"이라고 직접 답한 기록. 이게 있으면 확정
+        // 구간의 busy_slots 항목이 본인 사정인지 이 면접 때문인지 모호하지 않다.
+        attendanceConfirmedStarts: p.priorityConfirm?.answered_slots ?? [],
       })),
       rooms: interview.rooms,
       preferredSlots: interview.preferred_slots ?? [],

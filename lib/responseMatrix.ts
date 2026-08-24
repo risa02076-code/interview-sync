@@ -16,6 +16,16 @@ export type MatrixInterviewer = {
   name: string;
   responded: boolean;
   busy_slots: string[];
+  /**
+   * 최종 참석 확인(priority_confirm)에서 "이 시간에 참석 가능하다"고 직접 답한
+   * 옵션의 시작 슬롯들(response_requests.answered_slots).
+   *
+   * 확정된 구간은 busy_slots만 보면 "본인이 안 된다고 한 것"인지 "이 면접이 잡혀서
+   * 들어간 것"인지 구분할 수 없다(ambiguous). 그런데 그 시간에 참석 가능하다고
+   * **직접 답한 기록**이 있으면 그 모호함은 사라진다 — 답변이 busy_slots보다
+   * 정확한 근거다.
+   */
+  attendanceConfirmedStarts?: string[];
 };
 
 export type MatrixRoom = { id: string; name: string; busy_slots: string[] };
@@ -46,6 +56,9 @@ export type SlotState = {
    * 확정된 면접이 차지하는 구간이라, busy_slots의 그 항목이 "본인이 안 된다고 한
    * 것"인지 "이 면접이 잡혀서 들어간 것"인지 구분할 수 없는 사람.
    * (확정 시 busy_slots에 확정 시간이 추가되기 때문 — lib/applyMatch.ts 참고)
+   *
+   * 단, 그 시간에 "참석 가능"이라고 직접 답한 기록(attendanceConfirmedStarts)이
+   * 있으면 모호하지 않으므로 available로 분류된다.
    */
   ambiguous: string[];
   /** 1·2·3 (후보자 제출 순위), 아니면 null */
@@ -101,6 +114,19 @@ export function buildResponseMatrix(input: ResponseMatrixInput): {
     ...(matchedSlot ? occupiedSlots(matchedSlot, durationMinutes) : []),
   ]);
 
+  /**
+   * "참석 가능"이라고 답한 것은 옵션의 **시작 시간** 하나지만, 그 답변은 면접
+   * 구간 전체(1시간 면접이면 뒷 30분까지)에 대한 것이다. 그래서 시작 슬롯을
+   * 소요시간만큼 펼쳐서 들고 있는다 — 그러지 않으면 10:30에 확정된 1시간 면접의
+   * 11:00 칸만 계속 모호한 채로 남는다.
+   */
+  const confirmedSpanByPerson = new Map<string, Set<string>>(
+    interviewers.map((p) => [
+      p.id,
+      new Set((p.attendanceConfirmedStarts ?? []).flatMap((s) => occupiedSlots(s, durationMinutes))),
+    ]),
+  );
+
   const rankBySlot = new Map(preferredSlots.map((s, i) => [s, i + 1]));
   const states = new Map<string, SlotState>();
 
@@ -112,10 +138,15 @@ export function buildResponseMatrix(input: ResponseMatrixInput): {
 
     for (const person of interviewers) {
       const busyHere = person.busy_slots.includes(slot);
+      const attendanceConfirmed = confirmedSpanByPerson.get(person.id)?.has(slot) ?? false;
       if (!person.responded) {
         unknown.push(person.name);
-      } else if (busyHere && matchSpan.has(slot)) {
+      } else if (busyHere && matchSpan.has(slot) && !attendanceConfirmed) {
         ambiguous.push(person.name);
+      } else if (busyHere && matchSpan.has(slot)) {
+        // 참석 가능하다고 직접 답한 기록이 있으므로, busy_slots의 이 항목은
+        // 확정 때문에 들어간 것이 확실하다.
+        available.push(person.name);
       } else if (busyHere) {
         unavailable.push(person.name);
       } else {
