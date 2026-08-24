@@ -1,5 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { findMatch, requiresRoom, type Interviewer, type Room } from "./matching";
+import { confirmInterviewAtomically } from "./confirmInterview";
 import { interviewDurationMinutes, occupiedSlots } from "./slots";
 
 /**
@@ -28,6 +29,27 @@ export async function matchAndPersist(
     durationMinutes,
   );
 
+  if (result.status === "confirmed" && result.matchedSlot !== null) {
+    // 확정은 면접 행 + 면접관별 busy_slots + 회의실을 함께 바꿔야 해서, 나눠 쓰면
+    // 중간 실패 시 반쪽 상태가 남고 동시 확정도 둘 다 통과한다. DB 함수 한 번으로
+    // 묶어 전부 되거나 전부 안 되게 하고, 그 안에서 잠근 뒤 다시 확인해 이중 배정을
+    // 실제로 막는다(lib/confirmInterview.ts).
+    //
+    // 점유 구간은 여기서 계산해서 넘긴다 — 시작 슬롯 하나만 표시하면 바로 다음
+    // 슬롯이 비어 있는 것으로 보여 겹치는 면접이 또 잡힌다. 소요시간 계산은 계속
+    // TypeScript에 남겨 테스트가 검증하게 한다.
+    return await confirmInterviewAtomically(supabase, {
+      interviewId,
+      slot: result.matchedSlot,
+      span: occupiedSlots(result.matchedSlot, durationMinutes),
+      roomId: result.roomId,
+      status: result.status,
+      note: result.note,
+      preferredSlots: candidateSlots,
+    });
+  }
+
+  // 확정이 아니면 바뀌는 곳이 면접 행 하나뿐이라 이미 원자적이다.
   const { data: updated, error } = await supabase
     .from("interviews")
     .update({
@@ -41,26 +63,6 @@ export async function matchAndPersist(
     .select()
     .single();
   if (error) throw error;
-
-  if (result.status === "confirmed" && result.matchedSlot !== null) {
-    // 시작 슬롯 하나가 아니라 면접이 실제로 걸치는 슬롯 전체를 사용 중으로 표시한다.
-    // 하나만 표시하면 바로 다음 슬롯이 비어 있는 것으로 보여 같은 면접관·회의실에
-    // 겹치는 면접이 또 잡힌다.
-    const span = occupiedSlots(result.matchedSlot, durationMinutes);
-    for (const p of panelInterviewers as Interviewer[]) {
-      await supabase
-        .from("interviewers")
-        .update({ busy_slots: [...new Set([...p.busy_slots, ...span])] })
-        .eq("id", p.id);
-    }
-    const room = (rooms as Room[]).find((r) => r.id === result.roomId);
-    if (room) {
-      await supabase
-        .from("rooms")
-        .update({ busy_slots: [...new Set([...room.busy_slots, ...span])] })
-        .eq("id", room.id);
-    }
-  }
 
   return updated;
 }

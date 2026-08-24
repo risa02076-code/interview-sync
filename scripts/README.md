@@ -20,6 +20,9 @@ DB가 있어야 하므로 CI에서 자동으로 돌지 않고, 수동으로 실�
 node scripts/verify-reschedule-flow.js
 node scripts/verify-wide-availability-flow.js
 node scripts/verify-priority-confirm-resend.js
+
+# 아래는 로컬 dev 서버가 필요 없다(Supabase에 직접 붙는다)
+npm run verify:confirm-transaction
 ```
 
 ## 무엇을 검증하는지
@@ -34,6 +37,18 @@ node scripts/verify-priority-confirm-resend.js
 - **verify-priority-confirm-resend.js**: 발송 실패로 방치된 예전 요청(pending)이 있어도,
   "재발송"으로 만든 최신 요청에 전원이 답하면 자동 확정이 정상적으로 되는지 검증한다
   (면접관별 최신 요청 기준 판단 로직의 회귀 테스트).
+
+- **verify-confirm-transaction.ts**: 확정을 하나로 묶는 DB 함수(`confirm_interview`)가
+  실제로 약속대로 동작하는지 진짜 DB에 대고 확인한다. 이 함수는 plpgsql이라 tsc도
+  vitest도 닿지 않아서, 단위 테스트는 "앱이 rpc를 올바른 인자로 한 번만 부르는지"까지만
+  볼 수 있다. 그 마지막 한 칸을 메우는 검증이다 — ① 모든 쓰기 직후 강제 중단시켜도
+  아무것도 안 남는지(원자성), ② 겹치는 확정이 `PT409`로 거부되고 그때도 아무것도 안
+  쓰이는지, ③ `force`면 겹쳐도 진행되는지(수동 확정 동작 보존), ④ 두 확정을 동시에
+  불렀을 때 정확히 하나만 성공하는지.
+
+  **`supabase/migration_confirm_transaction.sql`을 Supabase SQL Editor에서 먼저 실행해야
+  한다.** 함수가 없으면 데이터를 건드리기 전에 멈추고 무엇을 실행해야 하는지 알려준다
+  (그러지 않으면 "함수가 없어서 실패한 것"을 "의도한 실패"로 잘못 세게 된다).
 
 각 스크립트는 `__검증__`류 이름의 테스트용 면접 케이스를 만들어 실행하고, 끝나면
 스스로 정리(삭제)한다. 실행 중 실패하면(assert 실패) 어떤 조건이 깨졌는지 콘솔에 표시된다.

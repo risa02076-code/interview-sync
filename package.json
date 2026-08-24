@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "verify": "npm run lint && npm run typecheck && npm test",
-    "backfill:busy-slots": "tsx scripts/backfill-busy-slots.ts"
+    "backfill:busy-slots": "tsx scripts/backfill-busy-slots.ts",
+    "verify:confirm-transaction": "tsx scripts/verify-confirm-transaction.ts"
   },
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.3.1",

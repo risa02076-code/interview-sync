@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { confirmInterviewAtomically } from "@/lib/confirmInterview";
 import { requiresRoom, type Room } from "@/lib/matching";
 import { interviewDurationMinutes, occupiedSlots } from "@/lib/slots";
 
@@ -40,35 +41,28 @@ export async function POST(request: Request, { params }: Params) {
     ? (rooms as Room[] | null)?.find((r) => span.every((s) => !r.busy_slots.includes(s)))
     : undefined;
 
-  const { data: updated, error: uErr } = await supabase
-    .from("interviews")
-    .update({
-      matched_slot: slot,
-      room_id: freeRoom?.id ?? null,
+  // 면접 행·면접관 캘린더·회의실을 나눠 쓰면 중간에 하나가 실패했을 때 반쪽 상태가
+  // 남는다. DB 함수 하나로 묶어 전부 되거나 전부 안 되게 한다(lib/confirmInterview.ts).
+  //
+  // force로 부른다 — 이 경로는 겹쳐도 그대로 진행하는 것이 원래 설계다. 트랜잭션이
+  // 생겨도 그 판단은 바뀌지 않는다. 겹침을 막는 것이 아니라, 저장이 반쪽으로
+  // 끝나지 않게 하는 것이 여기서 얻는 것이다.
+  try {
+    const updated = await confirmInterviewAtomically(supabase, {
+      interviewId: id,
+      slot,
+      span,
+      roomId: freeRoom?.id ?? null,
       status: "confirmed",
-      stage: "candidate_done",
       note: conflicts.length
         ? `리크루터가 직접 확정함 (겹침: ${conflicts.join(", ")})`
         : "리크루터가 직접 확정함",
-      confirmation_sent_at: null,
-    })
-    .eq("id", id)
-    .select()
-    .single();
-  if (uErr) return NextResponse.json({ error: uErr.message }, { status: 500 });
-
-  for (const p of panel ?? []) {
-    const merged = [...new Set([...p.busy_slots, ...span])];
-    if (merged.length !== p.busy_slots.length) {
-      await supabase.from("interviewers").update({ busy_slots: merged }).eq("id", p.id);
-    }
+      stage: "candidate_done",
+      resetConfirmation: true,
+      force: true,
+    });
+    return NextResponse.json(updated);
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
-  if (freeRoom) {
-    await supabase
-      .from("rooms")
-      .update({ busy_slots: [...new Set([...freeRoom.busy_slots, ...span])] })
-      .eq("id", freeRoom.id);
-  }
-
-  return NextResponse.json(updated);
 }
