@@ -30,7 +30,7 @@ export async function matchAndPersist(
   );
 
   if (result.status === "confirmed" && result.matchedSlot !== null) {
-    // 확정은 면접 행 + 면접관별 busy_slots + 회의실을 함께 바꿔야 해서, 나눠 쓰면
+    // 확정은 면접 행 + 면접관별 busy_slots + 면접실을 함께 바꿔야 해서, 나눠 쓰면
     // 중간 실패 시 반쪽 상태가 남고 동시 확정도 둘 다 통과한다. DB 함수 한 번으로
     // 묶어 전부 되거나 전부 안 되게 하고, 그 안에서 잠근 뒤 다시 확인해 이중 배정을
     // 실제로 막는다(lib/confirmInterview.ts).

@@ -25,7 +25,7 @@ function person(overrides: Partial<Interviewer> = {}): Interviewer {
 }
 
 function room(overrides: Partial<Room> = {}): Room {
-  return { id: "r1", name: "회의실1", busy_slots: [], ...overrides };
+  return { id: "r1", name: "면접실1", busy_slots: [], ...overrides };
 }
 
 describe("planBusySlotsBackfill", () => {
@@ -55,7 +55,7 @@ describe("planBusySlotsBackfill", () => {
     expect(plan.fixes).toEqual([]);
   });
 
-  it("30분 면접(온라인)은 회의실도 없고 채울 것도 없다", () => {
+  it("30분 면접(온라인)은 면접실도 없고 채울 것도 없다", () => {
     const plan = planBusySlotsBackfill(
       [interview({ interview_type: "온라인", room_id: null })],
       [person({ busy_slots: [SLOT_10] })],
@@ -152,7 +152,7 @@ describe("planBusySlotsBackfill", () => {
     expect(plan.skipped[0].reason).toContain("없는사람");
   });
 
-  it("배정된 회의실 행이 없으면 건너뛴 이유를 남긴다", () => {
+  it("배정된 면접실 행이 없으면 건너뛴 이유를 남긴다", () => {
     const plan = planBusySlotsBackfill(
       [interview({ room_id: "없는방" })],
       [person({ busy_slots: [SLOT_10, SLOT_1030] })],

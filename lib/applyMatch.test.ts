@@ -78,7 +78,7 @@ describe("matchAndPersist", () => {
     expect(rpcCalls[0].args.p_span).toEqual([TEN, TEN_30]);
   });
 
-  it("30분 면접(온라인)은 한 칸만 점유하고 회의실 없이 확정한다", async () => {
+  it("30분 면접(온라인)은 한 칸만 점유하고 면접실 없이 확정한다", async () => {
     const { client, rpcCalls } = fakeSupabase({ interviewers: freePanel, rooms: freeRooms });
 
     await matchAndPersist(client, "iv-1", [TEN], PANEL, "온라인");

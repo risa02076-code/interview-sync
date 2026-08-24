@@ -63,7 +63,7 @@ export type SlotState = {
   ambiguous: string[];
   /** 1·2·3 (후보자 제출 순위), 아니면 null */
   candidateRank: number | null;
-  /** 이 30분에 쓸 수 있는 회의실이 하나라도 있는지 (회의실이 필요 없는 유형이면 항상 true) */
+  /** 이 30분에 쓸 수 있는 면접실이 하나라도 있는지 (면접실이 필요 없는 유형이면 항상 true) */
   roomFree: boolean;
   /** 확정된 면접의 시작 시간 */
   isMatchedStart: boolean;

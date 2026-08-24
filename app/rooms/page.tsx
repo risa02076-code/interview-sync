@@ -6,7 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { requiredCapacity } from "@/lib/rooms";
+import { SlotGrid, type GridSlot } from "@/components/slot-grid";
+import { buildRoomOccupancy, requiredCapacity, type RoomBooking } from "@/lib/rooms";
+import { formatSlotLabel } from "@/lib/slots";
 
 type RoomRow = {
   id: string;
@@ -16,6 +18,8 @@ type RoomRow = {
   busy_slots: string[];
   /** 지금 이 방을 쓰는 확정 면접 수 — "사용 안 함"이 무엇에 영향을 주는지 알려준다 */
   confirmedCount: number;
+  /** 그 면접들이 실제로 차지하는 구간 — "왜 찼는지"를 설명하기 위해 필요하다 */
+  bookings: RoomBooking[];
 };
 
 export default function RoomsPage() {
@@ -27,6 +31,9 @@ export default function RoomsPage() {
   const [draftName, setDraftName] = useState("");
   const [draftCapacity, setDraftCapacity] = useState("");
   const [editError, setEditError] = useState<string | null>(null);
+
+  const [openScheduleId, setOpenScheduleId] = useState<string | null>(null);
+  const [gridSlots, setGridSlots] = useState<GridSlot[]>([]);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState("");
@@ -41,6 +48,10 @@ export default function RoomsPage() {
 
   useEffect(() => {
     load();
+    // 격자의 시간 축. 지금 기준 앞으로의 영업일이라 "언제 비어 있는지"를 보는 용도에 맞다.
+    fetch("/api/slots")
+      .then((res) => res.json())
+      .then(setGridSlots);
   }, []);
 
   function notify(message: string) {
@@ -64,7 +75,7 @@ export default function RoomsPage() {
     setNewName("");
     setNewCapacity("");
     setShowAddForm(false);
-    notify("회의실을 추가했습니다.");
+    notify("면접실을 추가했습니다.");
     load();
   }
 
@@ -132,8 +143,19 @@ export default function RoomsPage() {
       setEditingId(room.id);
       return;
     }
-    notify("회의실을 지웠습니다.");
+    notify("면접실을 지웠습니다.");
     load();
+  }
+
+  /**
+   * 격자에 그릴 축. /api/slots(앞으로의 영업일)만 쓰면 이미 잡힌 지난 면접이 잘리므로,
+   * 이 방이 쓰이는 시간을 합집합으로 더한다 — 히트맵에서 지난 라운드 응답을 축에
+   * 넣는 것과 같은 이유다.
+   */
+  function axisFor(room: RoomRow, occupancy: Map<string, string | null>): GridSlot[] {
+    const keys = new Set(gridSlots.map((s) => s.key));
+    for (const slot of occupancy.keys()) keys.add(slot);
+    return [...keys].sort().map((key) => ({ key }));
   }
 
   const missingCapacity = (rooms ?? []).filter((r) => r.active && r.capacity == null).length;
@@ -146,14 +168,14 @@ export default function RoomsPage() {
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">회의실 관리</h1>
+          <h1 className="text-2xl font-bold">면접실 관리</h1>
           <p className="text-sm text-muted-foreground">
-            대면 면접은 여기 등록된 회의실 중에서 자동으로 배정됩니다. 정원을 넣으면 면접관
+            대면 면접은 여기 등록된 면접실 중에서 자동으로 배정됩니다. 정원을 넣으면 면접관
             수에 맞는 방만 고릅니다.
           </p>
         </div>
         <Button onClick={() => setShowAddForm((v) => !v)} variant={showAddForm ? "outline" : "default"}>
-          {showAddForm ? "취소" : "+ 회의실 추가"}
+          {showAddForm ? "취소" : "+ 면접실 추가"}
         </Button>
       </div>
 
@@ -166,7 +188,7 @@ export default function RoomsPage() {
           <CardContent className="space-y-3 pt-6">
             <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
               <div className="space-y-1.5">
-                <Label htmlFor="new-room-name">회의실 이름</Label>
+                <Label htmlFor="new-room-name">면접실 이름</Label>
                 <Input
                   id="new-room-name"
                   value={newName}
@@ -201,7 +223,7 @@ export default function RoomsPage() {
 
       {missingCapacity > 0 && (
         <p className="rounded-md bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-500">
-          정원이 입력되지 않은 회의실이 {missingCapacity}개 있습니다. 그 방들은 인원을 따지지
+          정원이 입력되지 않은 면접실이 {missingCapacity}개 있습니다. 그 방들은 인원을 따지지
           않고 배정되므로, 면접관이 많은 면접에 작은 방이 잡힐 수 있습니다.
         </p>
       )}
@@ -210,7 +232,7 @@ export default function RoomsPage() {
         <p className="text-sm text-muted-foreground">불러오는 중...</p>
       ) : rooms.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          등록된 회의실이 없습니다. 회의실이 없으면 대면 면접은 자동으로 확정되지 않습니다.
+          등록된 면접실이 없습니다. 면접실이 없으면 대면 면접은 자동으로 확정되지 않습니다.
         </p>
       ) : (
         <div className="space-y-3">
@@ -240,6 +262,13 @@ export default function RoomsPage() {
                     </p>
                   </div>
                   <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setOpenScheduleId((cur) => (cur === room.id ? null : room.id))}
+                    >
+                      {openScheduleId === room.id ? "일정 닫기" : "사용 현황"}
+                    </Button>
                     <Button size="sm" variant="outline" onClick={() => openEditor(room)}>
                       {editingId === room.id ? "닫기" : "수정"}
                     </Button>
@@ -265,6 +294,56 @@ export default function RoomsPage() {
                     )}
                   </div>
                 </div>
+
+                {openScheduleId === room.id &&
+                  (() => {
+                    const occupancy = buildRoomOccupancy(room.busy_slots, room.bookings);
+                    const axis = axisFor(room, occupancy);
+                    const unexplained = [...occupancy.values()].filter((v) => v === null).length;
+                    return (
+                      <div className="space-y-2 rounded-md bg-muted/50 p-3">
+                        <p className="text-xs text-muted-foreground">
+                          색이 칠해진 칸이 <b>사용 중</b>, 빈 칸이 <b>비어 있는 시간</b>입니다.
+                          칸에 마우스를 올리면 어떤 면접이 잡혀 있는지 보입니다.
+                        </p>
+                        {axis.length === 0 ? (
+                          <p className="text-xs text-muted-foreground">표시할 시간이 없습니다.</p>
+                        ) : (
+                          <SlotGrid
+                            slots={axis}
+                            selected={new Set()}
+                            onPaint={() => {}}
+                            readOnly
+                            panelSize={1}
+                            cellInfo={(key) => {
+                              if (!occupancy.has(key)) return undefined;
+                              const who = occupancy.get(key) ?? null;
+                              return {
+                                key,
+                                conflictCount: 1,
+                                hint: `${formatSlotLabel(key)} · ${
+                                  who ? `${who} 면접` : "사용 중 (면접 외 사유)"
+                                }`,
+                              };
+                            }}
+                          />
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          사용 중 {occupancy.size}칸
+                          {unexplained > 0 && (
+                            <>
+                              {" "}
+                              · 그중 <b>{unexplained}칸</b>은 확정된 면접으로 설명되지 않습니다
+                              <span className="block">
+                                (면접 외의 이유로 막혔거나, 지난 면접이 끝난 뒤 정리되지 않은
+                                시간일 수 있습니다)
+                              </span>
+                            </>
+                          )}
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                 {editingId === room.id && (
                   <div className="space-y-3 rounded-md bg-muted/50 p-3">
@@ -306,8 +385,8 @@ export default function RoomsPage() {
       )}
 
       <p className="text-xs text-muted-foreground">
-        <b>한 번도 쓰인 적 없는 회의실</b>만 지울 수 있습니다. 이미 면접에 쓰인 방은 대신{" "}
-        <b>사용 안 함</b>으로 둡니다 — 지난 면접 기록에 남은 회의실 이름이 사라지지 않게 하기
+        <b>한 번도 쓰인 적 없는 면접실</b>만 지울 수 있습니다. 이미 면접에 쓰인 방은 대신{" "}
+        <b>사용 안 함</b>으로 둡니다 — 지난 면접 기록에 남은 면접실 이름이 사라지지 않게 하기
         위해서입니다. 사용 안 함으로 두면 앞으로의 자동 배정에서만 빠집니다.
       </p>
     </main>

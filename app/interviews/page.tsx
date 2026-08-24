@@ -155,7 +155,7 @@ export default function InterviewsPage() {
         <div>
           <h1 className="text-2xl font-bold">조율 대시보드</h1>
           <p className="text-sm text-muted-foreground">
-            후보자 희망시간 · 면접관 캘린더 · 회의실을 자동으로 대조해 면접 일정을 관리합니다.
+            후보자 희망시간 · 면접관 캘린더 · 면접실을 자동으로 대조해 면접 일정을 관리합니다.
           </p>
         </div>
         <div className="flex gap-2">
@@ -166,7 +166,7 @@ export default function InterviewsPage() {
             <Link href="/interviewers">면접관 관리</Link>
           </Button>
           <Button asChild variant="outline">
-            <Link href="/rooms">회의실 관리</Link>
+            <Link href="/rooms">면접실 관리</Link>
           </Button>
           <Button asChild>
             <Link href="/interviews/new">+ 후보자 등록</Link>

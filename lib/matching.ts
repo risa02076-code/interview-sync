@@ -8,7 +8,7 @@ import {
 
 export type Interviewer = { id: string; name: string; role: string; busy_slots: string[] };
 /**
- * 매칭이 최소한으로 필요로 하는 회의실 정보. 정원·사용 여부(capacity/active)는
+ * 매칭이 최소한으로 필요로 하는 면접실 정보. 정원·사용 여부(capacity/active)는
  * ManagedRoom(lib/rooms.ts)에 선택 필드로 있고, 없으면 종전대로 제한 없이 동작한다.
  */
 export type Room = { id: string; name: string; busy_slots: string[] };
@@ -23,7 +23,7 @@ export type MatchResult = {
 export const INTERVIEW_TYPES = ["1차 대면", "2차 대면", "온라인", "전화"] as const;
 export type InterviewType = (typeof INTERVIEW_TYPES)[number];
 
-/** 대면 면접만 회의실이 필요하다. 온라인/전화는 회의실 없이도 매칭 가능하다. */
+/** 대면 면접만 면접실이 필요하다. 온라인/전화는 면접실 없이도 매칭 가능하다. */
 export function requiresRoom(interviewType: string): boolean {
   return interviewType === "1차 대면" || interviewType === "2차 대면";
 }
@@ -96,7 +96,7 @@ const MAX_FALLBACK_RECOMMENDATIONS = 3;
 
 /**
  * 패널 전원이 동시에 가능한 시간이 없을 수도 있다는 전제 아래, 전체 후보 슬롯의
- * "충돌(면접관 불가능 + 회의실 없음)" 점수를 모두 계산해 가장 낮은 점수와 동점인
+ * "충돌(면접관 불가능 + 면접실 없음)" 점수를 모두 계산해 가장 낮은 점수와 동점인
  * 시간들을 추천한다. 전원 동시 가능(충돌 0)한 시간은 후보자가 고를 여지를 넓히기
  * 위해 개수 제한 없이 전부 반환하고, 하나도 없으면 그다음으로 충돌이 적은 시간들을
  * 최대 MAX_FALLBACK_RECOMMENDATIONS개까지만 대안으로 반환한다.
@@ -121,7 +121,7 @@ export function recommendLeastConflictSlots(
         .filter((p) => span.some((slot) => p.busy_slots.includes(slot)))
         .map((p) => p.name);
       // 추천 점수도 같은 기준으로 매긴다 — 여기서만 정원을 무시하면, 실제로는
-      // 배정할 수 없는 시간이 "회의실 문제 없음"으로 추천된다.
+      // 배정할 수 없는 시간이 "면접실 문제 없음"으로 추천된다.
       const roomBlocked =
         roomRequired &&
         !rooms.some(

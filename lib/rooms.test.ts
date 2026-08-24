@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { isRoomUsable, requiredCapacity, roomExclusionReason, type ManagedRoom } from "./rooms";
+import {
+  buildRoomOccupancy,
+  isRoomUsable,
+  requiredCapacity,
+  roomExclusionReason,
+  type ManagedRoom,
+} from "./rooms";
 
 function room(over: Partial<ManagedRoom> = {}): ManagedRoom {
   return { id: "r1", name: "면접실 A", busy_slots: [], ...over };
@@ -58,7 +64,7 @@ describe("roomExclusionReason", () => {
 
   it("사용 안 함이 정원보다 먼저 설명된다", () => {
     expect(roomExclusionReason(room({ capacity: 2, active: false }), 4)).toBe(
-      "사용 안 함으로 표시된 회의실",
+      "사용 안 함으로 표시된 면접실",
     );
   });
 
@@ -66,5 +72,51 @@ describe("roomExclusionReason", () => {
     expect(roomExclusionReason(room({ capacity: 3 }), 4)).toBe(
       "정원 3명 — 이 면접에는 5명(면접관 4명 + 후보자)이 필요",
     );
+  });
+});
+
+describe("buildRoomOccupancy", () => {
+  const A = "2024-01-02T01:00:00.000Z";
+  const B = "2024-01-02T01:30:00.000Z";
+  const C = "2024-01-02T05:00:00.000Z";
+
+  it("확정 면접이 설명하는 슬롯에는 후보자 이름이 붙는다", () => {
+    const map = buildRoomOccupancy([A, B], [{ interviewId: "iv1", candidateName: "이하은", slots: [A, B] }]);
+    expect(map.get(A)).toBe("이하은");
+    expect(map.get(B)).toBe("이하은");
+  });
+
+  it("면접으로 설명되지 않는 사용 중 시간은 사유 미상(null)으로 남는다", () => {
+    // busy_slots에는 면접 말고 다른 이유로 막은 시간도 섞여 들어간다.
+    const map = buildRoomOccupancy([A, C], [{ interviewId: "iv1", candidateName: "이하은", slots: [A] }]);
+    expect(map.get(A)).toBe("이하은");
+    expect(map.get(C)).toBeNull();
+  });
+
+  it("비어 있는 시간은 아예 들어가지 않는다", () => {
+    const map = buildRoomOccupancy([A], []);
+    expect(map.has(B)).toBe(false);
+  });
+
+  it("면접이 차지하는데 busy_slots에 빠진 시간도 사용 중으로 잡는다", () => {
+    // 확정 저장이 반쪽으로 끝났거나 소요시간 도입 이전 데이터가 이 경우다.
+    // 화면에서 빈칸으로 보이면 그 자리에 다른 면접을 넣게 된다.
+    const map = buildRoomOccupancy([A], [{ interviewId: "iv1", candidateName: "이하은", slots: [A, B] }]);
+    expect(map.get(B)).toBe("이하은");
+  });
+
+  it("여러 면접이 각자의 구간을 가진다", () => {
+    const map = buildRoomOccupancy(
+      [A, B, C],
+      [
+        { interviewId: "iv1", candidateName: "이하은", slots: [A, B] },
+        { interviewId: "iv2", candidateName: "김서준", slots: [C] },
+      ],
+    );
+    expect([...map.entries()].sort()).toEqual([
+      [A, "이하은"],
+      [B, "이하은"],
+      [C, "김서준"],
+    ]);
   });
 });

@@ -159,7 +159,7 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
 
   const needsRoom = interview ? requiresRoom(interview.interview_type) : false;
 
-  /** 히트맵 색을 위해, 각 슬롯에 걸리는 "충돌 인원 수"를 미리 계산해둔다(면접관 겹침 + 회의실 부족). */
+  /** 히트맵 색을 위해, 각 슬롯에 걸리는 "충돌 인원 수"를 미리 계산해둔다(면접관 겹침 + 면접실 부족). */
   const conflictBySlot = useMemo(() => {
     if (!interview) return new Map<string, number>();
     const map = new Map<string, number>();
@@ -197,8 +197,8 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
         // 구간의 busy_slots 항목이 본인 사정인지 이 면접 때문인지 모호하지 않다.
         attendanceConfirmedStarts: p.priorityConfirm?.answered_slots ?? [],
       })),
-      // 히트맵의 "회의실 있음"은 매칭이 실제로 쓸 수 있는 방을 뜻해야 한다.
-      // 정원이 모자라거나 사용 안 함인 방까지 세면, 화면은 "회의실 문제 없음"인데
+      // 히트맵의 "면접실 있음"은 매칭이 실제로 쓸 수 있는 방을 뜻해야 한다.
+      // 정원이 모자라거나 사용 안 함인 방까지 세면, 화면은 "면접실 문제 없음"인데
       // 자동 매칭은 그 시간을 거르는 어긋남이 생긴다.
       rooms: interview.rooms.filter((r) => isRoomUsable(r, interview.panelDetail.length)),
       preferredSlots: interview.preferred_slots ?? [],
@@ -214,8 +214,8 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     inspectedSlot && matrix ? matrix.states.get(inspectedSlot) ?? null : null;
 
   /**
-   * 클릭한 슬롯 하나에 대해 "면접관별 가능 여부"와 "회의실 가능 여부"를 따로 보여주기
-   * 위한 상세 정보. 히트맵 색(총 충돌 수)만으로는 사람 문제인지 회의실 문제인지
+   * 클릭한 슬롯 하나에 대해 "면접관별 가능 여부"와 "면접실 가능 여부"를 따로 보여주기
+   * 위한 상세 정보. 히트맵 색(총 충돌 수)만으로는 사람 문제인지 면접실 문제인지
    * 구분이 안 돼서, 자동 매칭이 왜 그 시간을 걸렀는지(또는 골랐는지) 설명하는 용도로도 쓴다.
    */
   function slotDetail(slot: string) {
@@ -714,7 +714,7 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
                   s.candidateRank ? `후보자 ${s.candidateRank}순위` : null,
                   s.unavailable.length ? `불가능 ${s.unavailable.length}명` : null,
                   s.unknown.length ? `미응답 ${s.unknown.length}명` : null,
-                  needsRoom && !s.roomFree ? "회의실 없음" : null,
+                  needsRoom && !s.roomFree ? "면접실 없음" : null,
                 ]
                   .filter(Boolean)
                   .join(" · "),
@@ -754,7 +754,7 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
               )}
               {needsRoom && (
                 <p>
-                  <span className="text-muted-foreground">회의실 </span>
+                  <span className="text-muted-foreground">면접실 </span>
                   {inspected.roomFree ? "사용 가능한 방 있음" : "전부 사용 중"}
                 </p>
               )}
@@ -953,8 +953,8 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
         <div className="flex flex-col gap-2 rounded-md border p-3">
           <p className="text-xs text-muted-foreground">
             자동 매칭이 안 되거나(전원 공통 시간 없음) 그냥 직접 정하고 싶을 때 씁니다. 색이
-            진할수록 겹치는 면접관(또는 회의실 부족)이 많다는 뜻이고, 시간을 클릭하면 자동
-            매칭이 그 시간을 왜 골랐는지/걸렀는지(누가 가능한지, 회의실이 있는지)를 그대로
+            진할수록 겹치는 면접관(또는 면접실 부족)이 많다는 뜻이고, 시간을 클릭하면 자동
+            매칭이 그 시간을 왜 골랐는지/걸렀는지(누가 가능한지, 면접실이 있는지)를 그대로
             보여줍니다. 그대로 확정하고 싶으면 아래 버튼을 누르면 됩니다.
           </p>
           <SlotGrid
@@ -984,12 +984,12 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
               <p className="text-xs">
                 {needsRoom ? (
                   slotDetail(manualSlot)!.freeRoomName ? (
-                    <>회의실: ✔ {slotDetail(manualSlot)!.freeRoomName} 배정 가능</>
+                    <>면접실: ✔ {slotDetail(manualSlot)!.freeRoomName} 배정 가능</>
                   ) : (
-                    <span className="text-destructive">회의실: ✘ 전체 회의실 사용 중</span>
+                    <span className="text-destructive">면접실: ✘ 전체 면접실 사용 중</span>
                   )
                 ) : (
-                  "회의실: 필요 없음 (온라인/전화)"
+                  "면접실: 필요 없음 (온라인/전화)"
                 )}
               </p>
             </div>

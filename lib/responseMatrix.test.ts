@@ -210,14 +210,14 @@ describe("startable — findMatch와 같은 기준", () => {
   });
 });
 
-describe("회의실", () => {
-  it("구간 전체가 비어 있어야 회의실이 있다고 본다", () => {
+describe("면접실", () => {
+  it("구간 전체가 비어 있어야 면접실이 있다고 본다", () => {
     const { states } = build({ rooms: [{ id: "r1", name: "A", busy_slots: [NINE_30] }] });
     expect(states.get(NINE)!.roomFree).toBe(false);
     expect(states.get(TEN)!.roomFree).toBe(true);
   });
 
-  it("회의실이 필요 없는 유형이면 항상 true다", () => {
+  it("면접실이 필요 없는 유형이면 항상 true다", () => {
     const { states } = build({ needsRoom: false, rooms: [] });
     expect(states.get(NINE)!.roomFree).toBe(true);
   });
@@ -234,7 +234,7 @@ describe("heatInputs", () => {
     expect(heatInputs(states.get(NINE)!)).toEqual({ conflictCount: 1, estimated: true });
   });
 
-  it("회의실이 없으면 충돌 하나로 센다", () => {
+  it("면접실이 없으면 충돌 하나로 센다", () => {
     const { states } = build({ rooms: [{ id: "r1", name: "A", busy_slots: [NINE, NINE_30] }] });
     expect(heatInputs(states.get(NINE)!).conflictCount).toBe(1);
   });

@@ -55,27 +55,34 @@ type SlotGridProps = {
  * 사람의 시간대에 따라 같은 슬롯이 다른 칸에 놓인다 — 해외에 있는 후보자는 09:00
  * 슬롯을 전날 밤 시간으로 보게 되고, 격자의 행·열 구조 자체가 어긋난다.
  */
+export function gridShape(slots: GridSlot[]) {
+  const dayLabels = new Map<string, string>();
+  const days = new Set<string>();
+  const times = new Set<string>();
+  const cellKey = new Map<string, string>();
+
+  for (const s of slots) {
+    const dayId = kstDayKey(s.key);
+    const timeId = kstTimeLabel(s.key);
+
+    if (!dayLabels.has(dayId)) dayLabels.set(dayId, kstDateLabel(s.key));
+    days.add(dayId);
+    times.add(timeId);
+    cellKey.set(`${dayId}|${timeId}`, s.key);
+  }
+
+  // 등장 순서가 아니라 값으로 정렬한다. 처음 등장한 순서로 쌓으면, 축에 지난 슬롯이
+  // 하나만 섞여 들어와도 그 시간이 맨 윗줄로 올라온다 — 예를 들어 축의 첫 날에
+  // 11:30 하나뿐이면 격자가 11:30, 09:00, 09:30... 순으로 그려진다.
+  // "YYYY-MM-DD"와 "HH:MM"은 사전순 정렬이 곧 시간순이다.
+  const dayOrder = [...days].sort();
+  const timeOrder = [...times].sort();
+
+  return { dayOrder, dayLabels, timeOrder, cellKey };
+}
+
 function useGridShape(slots: GridSlot[]) {
-  return useMemo(() => {
-    const dayOrder: string[] = [];
-    const dayLabels = new Map<string, string>();
-    const timeOrder: string[] = [];
-    const cellKey = new Map<string, string>();
-
-    for (const s of slots) {
-      const dayId = kstDayKey(s.key);
-      const timeId = kstTimeLabel(s.key);
-
-      if (!dayLabels.has(dayId)) {
-        dayOrder.push(dayId);
-        dayLabels.set(dayId, kstDateLabel(s.key));
-      }
-      if (!timeOrder.includes(timeId)) timeOrder.push(timeId);
-      cellKey.set(`${dayId}|${timeId}`, s.key);
-    }
-
-    return { dayOrder, dayLabels, timeOrder, cellKey };
-  }, [slots]);
+  return useMemo(() => gridShape(slots), [slots]);
 }
 
 /** 충돌 인원 비율에 따라 초록(0명)~빨강(전원)으로 배경색을 보간한다. */

@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import type { RoomBooking } from "@/lib/rooms";
+import { interviewDurationMinutes, occupiedSlots } from "@/lib/slots";
 
 /**
- * 회의실 목록·추가.
+ * 면접실 목록·추가.
  *
- * 지금까지 회의실은 시드 데이터로 들어간 것이 전부였고 추가할 방법이 없었다 —
+ * 지금까지 면접실은 시드 데이터로 들어간 것이 전부였고 추가할 방법이 없었다 —
  * Supabase Table Editor에 직접 들어가야 했는데 채용담당자에게는 그 권한이 없다.
  *
- * 목록에는 "이 방을 쓰는 확정 면접이 몇 건인지"를 함께 담는다. 그게 없으면
- * "사용 안 함"으로 바꾸는 것이 지금 잡혀 있는 일정에 영향을 주는지 알 수 없다.
+ * 목록에는 "이 방을 쓰는 확정 면접이 몇 건인지"와 그 면접들이 실제로 차지하는 구간을
+ * 함께 담는다. 앞의 것이 없으면 "사용 안 함"으로 바꾸는 것이 지금 잡혀 있는 일정에
+ * 영향을 주는지 알 수 없고, 뒤의 것이 없으면 화면이 "찬 시간"은 보여줘도 **왜 찼는지**를
+ * 설명할 수 없다(busy_slots에는 면접 때문에 찬 시간과 그 밖의 이유가 섞여 있다).
+ *
+ * 점유 구간은 소요시간만큼 펼쳐서 보낸다 — matched_slot 하나만 보내면 1시간 면접의
+ * 뒷 30분이 화면에서 빈칸으로 보인다.
  */
 
 /** 정원 입력값 검증. null(모름)은 허용하고, 그 외에는 1 이상의 정수만 받는다. */
@@ -29,17 +36,26 @@ export async function GET() {
 
   const { data: interviews } = await supabase
     .from("interviews")
-    .select("room_id,status")
+    .select("id,candidate_name,room_id,status,matched_slot,interview_type")
     .in("status", ["confirmed", "rescheduled"]);
 
-  const confirmedByRoom = new Map<string, number>();
+  const bookingsByRoom = new Map<string, RoomBooking[]>();
   for (const iv of interviews ?? []) {
-    if (!iv.room_id) continue;
-    confirmedByRoom.set(iv.room_id, (confirmedByRoom.get(iv.room_id) ?? 0) + 1);
+    if (!iv.room_id || !iv.matched_slot) continue;
+    const list = bookingsByRoom.get(iv.room_id) ?? [];
+    list.push({
+      interviewId: iv.id,
+      candidateName: iv.candidate_name,
+      slots: occupiedSlots(iv.matched_slot, interviewDurationMinutes(iv.interview_type)),
+    });
+    bookingsByRoom.set(iv.room_id, list);
   }
 
   return NextResponse.json(
-    (rooms ?? []).map((r) => ({ ...r, confirmedCount: confirmedByRoom.get(r.id) ?? 0 })),
+    (rooms ?? []).map((r) => {
+      const bookings = bookingsByRoom.get(r.id) ?? [];
+      return { ...r, confirmedCount: bookings.length, bookings };
+    }),
   );
 }
 
@@ -47,7 +63,7 @@ export async function POST(request: Request) {
   const { name, capacity } = (await request.json()) as { name?: string; capacity?: unknown };
 
   if (!name?.trim()) {
-    return NextResponse.json({ error: "회의실 이름은 필수입니다." }, { status: 400 });
+    return NextResponse.json({ error: "면접실 이름은 필수입니다." }, { status: 400 });
   }
   const parsed = parseCapacity(capacity);
   if (!parsed.ok) {

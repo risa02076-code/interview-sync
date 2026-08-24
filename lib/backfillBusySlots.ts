@@ -5,7 +5,7 @@ import { formatSlotRangeLabel, interviewDurationMinutes, occupiedSlots } from ".
  * 소요시간(INTERVIEW_DURATION_MINUTES)을 도입하기 전에 확정된 면접들은
  * busy_slots에 **시작 슬롯 하나만** 들어 있다. 새로 확정되는 건은
  * applyMatch가 구간 전체를 점유하므로 정확하지만, 옛 건들은 뒷 30분이 여전히
- * 비어 있는 것으로 보여 같은 면접관·회의실에 겹치는 면접이 또 잡힐 수 있다.
+ * 비어 있는 것으로 보여 같은 면접관·면접실에 겹치는 면접이 또 잡힐 수 있다.
  *
  * 이 모듈은 그 구멍을 소급해서 메우기 위한 "무엇을 고쳐야 하는지" 계산만
  * 담당한다(순수 함수 — DB 접근 없음). 실제 쓰기는 scripts/backfill-busy-slots.ts가 한다.
@@ -25,7 +25,7 @@ export type BackfillInterview = {
   status: "confirmed" | "rescheduled" | "escalated" | "pending";
 };
 
-/** 한 대상(면접관 1명 또는 회의실 1개)에 대해 추가해야 할 슬롯. */
+/** 한 대상(면접관 1명 또는 면접실 1개)에 대해 추가해야 할 슬롯. */
 export type BackfillFix = {
   table: "interviewers" | "rooms";
   id: string;
@@ -134,7 +134,7 @@ export function planBusySlotsBackfill(
         skipped.push({
           interviewId: iv.id,
           candidateName: iv.candidate_name,
-          reason: `배정된 회의실(${iv.room_id})이 rooms 테이블에 없음`,
+          reason: `배정된 면접실(${iv.room_id})이 rooms 테이블에 없음`,
         });
         continue;
       }

@@ -86,7 +86,7 @@ export async function GET(_request: Request, { params }: Params) {
         };
       }),
     roomName: rooms?.find((r) => r.id === data.room_id)?.name ?? null,
-    // 수동 확정 히트맵에서 임의의 시간에 회의실이 비어있는지 판단하는 데 쓴다.
+    // 수동 확정 히트맵에서 임의의 시간에 면접실이 비어있는지 판단하는 데 쓴다.
     rooms: rooms ?? [],
     interviewerProgress: { submitted: progress.submitted, total: progress.total },
     history,

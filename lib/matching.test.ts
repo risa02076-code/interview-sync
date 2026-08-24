@@ -3,7 +3,7 @@ import { findMatch, recommendLeastConflictSlots, requiresRoom } from "./matching
 import { generateUpcomingSlots } from "./slots";
 
 describe("requiresRoom", () => {
-  it("대면 면접만 회의실이 필요하다", () => {
+  it("대면 면접만 면접실이 필요하다", () => {
     expect(requiresRoom("1차 대면")).toBe(true);
     expect(requiresRoom("2차 대면")).toBe(true);
     expect(requiresRoom("온라인")).toBe(false);
@@ -69,7 +69,7 @@ describe("findMatch (broaden=false, 후보자가 제출한 시간 안에서만 �
     expect(result.roomId).toBe("r1");
   });
 
-  it("회의실이 필요 없는 유형은 정원과 무관하게 확정된다", () => {
+  it("면접실이 필요 없는 유형은 정원과 무관하게 확정된다", () => {
     const result = findMatch(
       [A],
       panelOf(8),
@@ -105,7 +105,7 @@ describe("findMatch (broaden=false, 후보자가 제출한 시간 안에서만 �
     expect(result.matchedSlot).toBe(B);
   });
 
-  it("회의실이 필요 없는 면접 유형은 회의실 없이도 확정된다", () => {
+  it("면접실이 필요 없는 면접 유형은 면접실 없이도 확정된다", () => {
     const result = findMatch([A], [{ id: "p1", name: "P1", role: "", busy_slots: [] }], [], false, false);
     expect(result.status).toBe("confirmed");
     expect(result.roomId).toBeNull();
@@ -128,7 +128,7 @@ describe("findMatch (broaden=false, 후보자가 제출한 시간 안에서만 �
     expect(result.status).toBe("pending");
   });
 
-  it("회의실이 전부 사용 중이면 그 시간은 건너뛴다", () => {
+  it("면접실이 전부 사용 중이면 그 시간은 건너뛴다", () => {
     const result = findMatch(
       [A, B],
       [{ id: "p1", name: "P1", role: "", busy_slots: [] }],
@@ -159,7 +159,7 @@ describe("findMatch (소요시간이 여러 슬롯에 걸치는 경우)", () => 
     expect(result.matchedSlot).toBe(NINE);
   });
 
-  it("회의실도 면접 시간 전체가 비어 있어야 배정한다", () => {
+  it("면접실도 면접 시간 전체가 비어 있어야 배정한다", () => {
     const result = findMatch([NINE, TEN], free(), room([NINE_THIRTY]), false, true, 60);
     expect(result.matchedSlot).toBe(TEN);
   });

@@ -8,7 +8,7 @@ export default function Home() {
       <div className="flex flex-col gap-6 px-4 items-center text-center max-w-xl">
         <h2 className="font-medium text-2xl">인터뷰싱크 — 면접 일정 자동 매칭</h2>
         <p className="text-muted-foreground">
-          후보자 희망시간과 면접관·회의실 캘린더를 자동으로 대조해 면접 일정을 확정하고,
+          후보자 희망시간과 면접관·면접실 캘린더를 자동으로 대조해 면접 일정을 확정하고,
           변경이 생기면 자동으로 재조율합니다.
         </p>
         <Link

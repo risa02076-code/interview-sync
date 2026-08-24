@@ -37,7 +37,7 @@ export type ConsistencyCheckInterview = {
 };
 
 /**
- * findMatch(lib/matching.ts)는 쓰는 시점에 이미 "겹치는 면접관/회의실이 없어야만
+ * findMatch(lib/matching.ts)는 쓰는 시점에 이미 "겹치는 면접관/면접실이 없어야만
  * 확정"을 보장한다. 이 함수는 매칭 로직 자체를 다시 확인하는 게 아니라(그건
  * matching.test.ts가 가짜 시나리오로 이미 함), 확정 이후 다른 경로에서 그 보장이
  * 실제로 깨졌는지를 지금 저장된 진짜 데이터에서 확인한다.
@@ -93,7 +93,7 @@ export function findConsistencyViolations(
         interviewId: iv.id,
         candidateName: iv.candidate_name,
         kind: "missing_room",
-        detail: `${iv.interview_type} 면접인데 회의실이 배정되지 않음`,
+        detail: `${iv.interview_type} 면접인데 면접실이 배정되지 않음`,
       });
     }
     if (!needsRoom && iv.room_id) {
@@ -101,7 +101,7 @@ export function findConsistencyViolations(
         interviewId: iv.id,
         candidateName: iv.candidate_name,
         kind: "unexpected_room",
-        detail: `${iv.interview_type} 면접인데 회의실(${iv.room_id})이 배정되어 있음`,
+        detail: `${iv.interview_type} 면접인데 면접실(${iv.room_id})이 배정되어 있음`,
       });
     }
   }
@@ -178,7 +178,7 @@ export function findConsistencyViolations(
         interviewId: iv.id,
         candidateName: iv.candidate_name,
         kind: "room_double_booked",
-        detail: `회의실 사용 시간이 겹침 — ${describe(iv)} ↔ ${clashes.map(describe).join(", ")}`,
+        detail: `면접실 사용 시간이 겹침 — ${describe(iv)} ↔ ${clashes.map(describe).join(", ")}`,
       });
     }
   }

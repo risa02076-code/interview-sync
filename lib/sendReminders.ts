@@ -178,7 +178,7 @@ export async function sendDayBeforeReminders(
 
   for (const iv of due) {
     const when = formatSlotLabel(iv.matched_slot);
-    // 대면이 아니면 회의실이 없으므로 면접 유형을 장소 자리에 표시한다
+    // 대면이 아니면 면접실이 없으므로 면접 유형을 장소 자리에 표시한다
     const where = rooms?.find((r) => r.id === iv.room_id)?.name ?? iv.interview_type;
     const panel = ((iv.panel as string[]) ?? [])
       .map((id) => interviewers?.find((p) => p.id === id))

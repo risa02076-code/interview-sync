@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cellStripe, cellTint, type CellInfo } from "./slot-grid";
+import { cellStripe, cellTint, gridShape, type CellInfo } from "./slot-grid";
 
 function info(over: Partial<CellInfo> = {}): CellInfo {
   return { key: "2024-01-02T00:00:00.000Z", ...over };
@@ -59,5 +59,40 @@ describe("cellStripe — 추정 여부는 색과 독립된 채널이다", () => 
   it("undefined를 넘겨도 터지지 않는다", () => {
     expect(cellStripe(undefined)).toBeUndefined();
     expect(cellTint(undefined, 2)).toBeUndefined();
+  });
+});
+
+describe("gridShape — 축은 등장 순서가 아니라 시간순으로 놓인다", () => {
+  const slot = (iso: string) => ({ key: iso });
+
+  it("시간 행을 시간순으로 정렬한다", () => {
+    // 지난 슬롯이 축에 하나 섞이면(8/13 11:30) 그 시간이 맨 위로 올라가던 문제.
+    const { timeOrder } = gridShape([
+      slot("2026-08-13T02:30:00.000Z"), // 11:30 KST — 축에서 가장 이른 날
+      slot("2026-08-25T00:00:00.000Z"), // 09:00 KST
+      slot("2026-08-25T00:30:00.000Z"), // 09:30 KST
+    ]);
+    expect(timeOrder).toEqual(["09:00", "09:30", "11:30"]);
+  });
+
+  it("날짜 열도 시간순으로 정렬한다 (입력 순서와 무관)", () => {
+    const { dayOrder } = gridShape([
+      slot("2026-08-26T00:00:00.000Z"),
+      slot("2026-08-25T00:00:00.000Z"),
+    ]);
+    expect(dayOrder).toEqual(["2026-08-25", "2026-08-26"]);
+  });
+
+  it("같은 시간이 여러 날에 있어도 행은 하나다", () => {
+    const { timeOrder } = gridShape([
+      slot("2026-08-25T00:00:00.000Z"),
+      slot("2026-08-26T00:00:00.000Z"),
+    ]);
+    expect(timeOrder).toEqual(["09:00"]);
+  });
+
+  it("날짜×시간 좌표로 원래 슬롯 키를 되찾을 수 있다", () => {
+    const { cellKey } = gridShape([slot("2026-08-25T00:30:00.000Z")]);
+    expect(cellKey.get("2026-08-25|09:30")).toBe("2026-08-25T00:30:00.000Z");
   });
 });

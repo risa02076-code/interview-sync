@@ -65,7 +65,7 @@ export function EventDrawer({
             </span>
           </Row>
           <Row label="면접 방식">{interview.interview_type}</Row>
-          <Row label="회의실">{interview.roomName ?? "-"}</Row>
+          <Row label="면접실">{interview.roomName ?? "-"}</Row>
           <Row label="Teams 링크">{teamsLink}</Row>
           <Row label="일정">
             {interview.matched_slot ? formatSlotLabel(interview.matched_slot) : "미확정"}

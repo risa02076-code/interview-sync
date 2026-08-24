@@ -46,7 +46,7 @@ describe("findConsistencyViolations", () => {
     expect(violations.every((v) => v.kind === "interviewer_double_booked")).toBe(true);
   });
 
-  it("1시간 면접 뒤 30분에 같은 회의실이 또 쓰이면 겹침으로 잡는다", () => {
+  it("1시간 면접 뒤 30분에 같은 면접실이 또 쓰이면 겹침으로 잡는다", () => {
     const violations = findConsistencyViolations([
       base({ id: "iv1", candidate_name: "A", panel: ["p1"], matched_slot: SLOT_A, room_id: "r1" }),
       base({ id: "iv2", candidate_name: "B", panel: ["p2"], matched_slot: SLOT_B, room_id: "r1" }),
@@ -85,19 +85,19 @@ describe("findConsistencyViolations", () => {
     expect(violations).toEqual([]);
   });
 
-  it("대면 면접인데 회의실이 없으면 잡는다", () => {
+  it("대면 면접인데 면접실이 없으면 잡는다", () => {
     const violations = findConsistencyViolations([base({ interview_type: "1차 대면", room_id: null })]);
     expect(violations).toHaveLength(1);
     expect(violations[0].kind).toBe("missing_room");
   });
 
-  it("비대면(온라인) 면접인데 회의실이 배정돼 있으면 잡는다", () => {
+  it("비대면(온라인) 면접인데 면접실이 배정돼 있으면 잡는다", () => {
     const violations = findConsistencyViolations([base({ interview_type: "온라인", room_id: "r1" })]);
     expect(violations).toHaveLength(1);
     expect(violations[0].kind).toBe("unexpected_room");
   });
 
-  it("비대면 면접이 회의실 없이 확정된 건 정상이다", () => {
+  it("비대면 면접이 면접실 없이 확정된 건 정상이다", () => {
     const violations = findConsistencyViolations([base({ interview_type: "전화", room_id: null })]);
     expect(violations).toEqual([]);
   });
@@ -112,7 +112,7 @@ describe("findConsistencyViolations", () => {
     expect(doubled.map((v) => v.interviewId).sort()).toEqual(["iv1", "iv2"]);
   });
 
-  it("같은 회의실이 같은 시간에 두 면접으로 잡히면 둘 다 잡는다", () => {
+  it("같은 면접실이 같은 시간에 두 면접으로 잡히면 둘 다 잡는다", () => {
     const violations = findConsistencyViolations([
       base({ id: "iv1", candidate_name: "A", panel: ["p1"], room_id: "r1", matched_slot: SLOT_A }),
       base({ id: "iv2", candidate_name: "B", panel: ["p2"], room_id: "r1", matched_slot: SLOT_A }),
