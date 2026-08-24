@@ -1,3 +1,4 @@
+import { isRoomUsable, type ManagedRoom } from "./rooms";
 import {
   SLOT_STEP_MINUTES,
   fitsInBusinessHours,
@@ -6,6 +7,10 @@ import {
 } from "./slots";
 
 export type Interviewer = { id: string; name: string; role: string; busy_slots: string[] };
+/**
+ * 매칭이 최소한으로 필요로 하는 회의실 정보. 정원·사용 여부(capacity/active)는
+ * ManagedRoom(lib/rooms.ts)에 선택 필드로 있고, 없으면 종전대로 제한 없이 동작한다.
+ */
 export type Room = { id: string; name: string; busy_slots: string[] };
 
 export type MatchResult = {
@@ -36,7 +41,7 @@ export function requiresRoom(interviewType: string): boolean {
 export function findMatch(
   candidateSlots: string[],
   panelInterviewers: Interviewer[],
-  rooms: Room[],
+  rooms: ManagedRoom[],
   broaden: boolean,
   roomRequired: boolean = true,
   durationMinutes: number = SLOT_STEP_MINUTES,
@@ -57,7 +62,13 @@ export function findMatch(
 
     let roomId: string | null = null;
     if (roomRequired) {
-      const freeRoom = rooms.find((r) => span.every((s) => !r.busy_slots.includes(s)));
+      // 비어 있는 것만으로는 부족하다 — 사용 안 함으로 표시됐거나 인원이 안 들어가는
+      // 방은 애초에 후보가 아니다(lib/rooms.ts). 정원을 모르는 방은 종전대로 통과한다.
+      const freeRoom = rooms.find(
+        (r) =>
+          isRoomUsable(r, panelInterviewers.length) &&
+          span.every((s) => !r.busy_slots.includes(s)),
+      );
       if (!freeRoom) continue;
       roomId = freeRoom.id;
     }
@@ -95,7 +106,7 @@ const MAX_FALLBACK_RECOMMENDATIONS = 3;
  */
 export function recommendLeastConflictSlots(
   panelInterviewers: Interviewer[],
-  rooms: Room[],
+  rooms: ManagedRoom[],
   roomRequired: boolean,
   businessDays: number = 5,
   excludeSlots: string[] = [],
@@ -109,8 +120,15 @@ export function recommendLeastConflictSlots(
       const conflicts = panelInterviewers
         .filter((p) => span.some((slot) => p.busy_slots.includes(slot)))
         .map((p) => p.name);
+      // 추천 점수도 같은 기준으로 매긴다 — 여기서만 정원을 무시하면, 실제로는
+      // 배정할 수 없는 시간이 "회의실 문제 없음"으로 추천된다.
       const roomBlocked =
-        roomRequired && !rooms.some((r) => span.every((slot) => !r.busy_slots.includes(slot)));
+        roomRequired &&
+        !rooms.some(
+          (r) =>
+            isRoomUsable(r, panelInterviewers.length) &&
+            span.every((slot) => !r.busy_slots.includes(slot)),
+        );
       return { slot: s.key, conflicts, score: conflicts.length + (roomBlocked ? 1 : 0) };
     });
   if (!scored.length) return [];

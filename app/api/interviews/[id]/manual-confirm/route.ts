@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { confirmInterviewAtomically } from "@/lib/confirmInterview";
-import { requiresRoom, type Room } from "@/lib/matching";
+import { requiresRoom } from "@/lib/matching";
+import { isRoomUsable, type ManagedRoom } from "@/lib/rooms";
 import { interviewDurationMinutes, occupiedSlots } from "@/lib/slots";
 
 type Params = { params: Promise<{ id: string }> };
@@ -37,8 +38,14 @@ export async function POST(request: Request, { params }: Params) {
   const conflicts = (panel ?? [])
     .filter((p) => span.some((s: string) => p.busy_slots.includes(s)))
     .map((p) => p.name);
+  // 담당자가 시간을 직접 고르더라도 회의실은 자동으로 잡는다. 그래서 자동 매칭과
+  // 같은 기준을 쓴다 — 사용 안 함으로 표시됐거나 인원이 안 들어가는 방을 조용히
+  // 배정하면, 사람이 고른 것도 아니면서 규칙만 어긴 결과가 남는다.
   const freeRoom = needsRoom
-    ? (rooms as Room[] | null)?.find((r) => span.every((s) => !r.busy_slots.includes(s)))
+    ? (rooms as ManagedRoom[] | null)?.find(
+        (r) =>
+          isRoomUsable(r, (panel ?? []).length) && span.every((s) => !r.busy_slots.includes(s)),
+      )
     : undefined;
 
   // 면접 행·면접관 캘린더·회의실을 나눠 쓰면 중간에 하나가 실패했을 때 반쪽 상태가

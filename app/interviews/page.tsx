@@ -165,6 +165,9 @@ export default function InterviewsPage() {
           <Button asChild variant="outline">
             <Link href="/interviewers">면접관 관리</Link>
           </Button>
+          <Button asChild variant="outline">
+            <Link href="/rooms">회의실 관리</Link>
+          </Button>
           <Button asChild>
             <Link href="/interviews/new">+ 후보자 등록</Link>
           </Button>

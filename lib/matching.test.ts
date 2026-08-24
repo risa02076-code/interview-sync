@@ -15,6 +15,72 @@ describe("findMatch (broaden=false, 후보자가 제출한 시간 안에서만 �
   const A = "2024-01-02T00:00:00.000Z";
   const B = "2024-01-02T00:30:00.000Z";
 
+  const panelOf = (n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: `p${i}`, name: `P${i}`, role: "", busy_slots: [] }));
+
+  it("정원이 모자란 방은 비어 있어도 고르지 않는다", () => {
+    // 면접관 4명 면접에는 후보자를 포함해 5자리가 필요하다. 4인실은 후보자가
+    // 앉을 자리가 없다.
+    const result = findMatch(
+      [A],
+      panelOf(4),
+      [{ id: "small", name: "2인실", busy_slots: [], capacity: 4 }],
+      false,
+      true,
+    );
+    expect(result.status).not.toBe("confirmed");
+    expect(result.roomId).toBeNull();
+  });
+
+  it("정원이 모자란 방을 건너뛰고 들어가는 방을 고른다", () => {
+    const result = findMatch(
+      [A],
+      panelOf(2),
+      [
+        { id: "small", name: "2인실", busy_slots: [], capacity: 2 },
+        { id: "big", name: "6인실", busy_slots: [], capacity: 6 },
+      ],
+      false,
+      true,
+    );
+    expect(result.status).toBe("confirmed");
+    expect(result.roomId).toBe("big");
+  });
+
+  it("사용 안 함으로 표시된 방은 정원이 넉넉해도 고르지 않는다", () => {
+    const result = findMatch(
+      [A],
+      panelOf(2),
+      [
+        { id: "off", name: "공사 중", busy_slots: [], capacity: 20, active: false },
+        { id: "ok", name: "면접실 A", busy_slots: [], capacity: 4 },
+      ],
+      false,
+      true,
+    );
+    expect(result.roomId).toBe("ok");
+  });
+
+  it("정원이 없는(미입력) 방은 종전대로 고를 수 있다", () => {
+    // 값을 모르는 것과 "작다"는 것은 다르다. 모른다고 막으면 정원을 입력하기
+    // 전까지 확정이 전부 멈춘다.
+    const result = findMatch([A], panelOf(8), [{ id: "r1", name: "R1", busy_slots: [] }], false, true);
+    expect(result.status).toBe("confirmed");
+    expect(result.roomId).toBe("r1");
+  });
+
+  it("회의실이 필요 없는 유형은 정원과 무관하게 확정된다", () => {
+    const result = findMatch(
+      [A],
+      panelOf(8),
+      [{ id: "small", name: "2인실", busy_slots: [], capacity: 2 }],
+      false,
+      false,
+    );
+    expect(result.status).toBe("confirmed");
+    expect(result.roomId).toBeNull();
+  });
+
   it("전원이 비어있는 첫 시간으로 확정한다", () => {
     const result = findMatch(
       [A, B],

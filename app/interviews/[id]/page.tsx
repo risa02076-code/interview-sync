@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatSlotLabel, formatSlotRangeLabel, interviewDurationMinutes } from "@/lib/slots";
 import { deriveDisplayStatus, dDayLabel, STATUS_META } from "@/lib/status";
 import { requiresRoom } from "@/lib/matching";
+import { isRoomUsable } from "@/lib/rooms";
 import { SlotGrid, type GridSlot } from "@/components/slot-grid";
 import { buildResponseMatrix, heatInputs, type SlotState } from "@/lib/responseMatrix";
 import { groupBusySlotsByDay, formatRespondedAt } from "@/lib/busySlots";
@@ -30,7 +31,16 @@ type InterviewerDetail = {
   busy_slots: string[];
   priorityConfirm: PriorityConfirmRecord | null;
 };
-type RoomDetail = { id: string; name: string; busy_slots: string[] };
+// capacity/active는 /api/interviews/[id]가 select("*")로 그대로 실어 보낸다.
+// 타입에 적어두지 않으면 isRoomUsable이 항상 통과하는 것처럼 보여, 실제로는
+// 걸러지는데 코드만 보면 안 걸러지는 것으로 읽힌다.
+type RoomDetail = {
+  id: string;
+  name: string;
+  busy_slots: string[];
+  capacity?: number | null;
+  active?: boolean | null;
+};
 
 type HistoryEntry = {
   id: string;
@@ -187,7 +197,10 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
         // 구간의 busy_slots 항목이 본인 사정인지 이 면접 때문인지 모호하지 않다.
         attendanceConfirmedStarts: p.priorityConfirm?.answered_slots ?? [],
       })),
-      rooms: interview.rooms,
+      // 히트맵의 "회의실 있음"은 매칭이 실제로 쓸 수 있는 방을 뜻해야 한다.
+      // 정원이 모자라거나 사용 안 함인 방까지 세면, 화면은 "회의실 문제 없음"인데
+      // 자동 매칭은 그 시간을 거르는 어긋남이 생긴다.
+      rooms: interview.rooms.filter((r) => isRoomUsable(r, interview.panelDetail.length)),
       preferredSlots: interview.preferred_slots ?? [],
       matchedSlot: interview.matched_slot,
       gridSlots: allSlots.map((s) => s.key),
