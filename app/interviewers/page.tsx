@@ -258,8 +258,11 @@ function InterviewersPageContent() {
                   ))}
                 </div>
               )}
-              <div className="flex gap-2">
+              {/* 좁은 화면에서는 이메일 칸과 버튼 3개가 한 줄에 안 들어간다.
+                  줄바꿈을 허용하고, 이메일 칸이 남는 폭을 차지하게 한다. */}
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
+                  className="w-full min-w-0 sm:w-auto sm:flex-1"
                   type="email"
                   value={drafts[p.id] ?? ""}
                   onChange={(e) => setDrafts((cur) => ({ ...cur, [p.id]: e.target.value }))}

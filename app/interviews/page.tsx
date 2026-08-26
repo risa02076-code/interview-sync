@@ -151,14 +151,14 @@ export default function InterviewsPage() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">조율 대시보드</h1>
           <p className="text-sm text-muted-foreground">
             후보자 희망시간 · 면접관 캘린더 · 면접실을 자동으로 대조해 면접 일정을 관리합니다.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={handleExportCsv} disabled={!filtered.length}>
             CSV로 내보내기
           </Button>
@@ -175,7 +175,7 @@ export default function InterviewsPage() {
       </div>
 
       {!!interviews?.length && (
-        <div className="grid grid-cols-5 gap-3">
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
           <StatCard label="전체" value={stats.total} />
           <StatCard label="조율중" value={stats.inProgress} className="text-blue-700" />
           <StatCard label="확정" value={stats.confirmed} className="text-green-700" />
@@ -184,8 +184,8 @@ export default function InterviewsPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <div className="inline-flex rounded-md border bg-muted/30 p-0.5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="inline-flex w-fit rounded-md border bg-muted/30 p-0.5">
           {(["list", "week", "day"] as ViewMode[]).map((v) => (
             <button
               key={v}
@@ -205,7 +205,7 @@ export default function InterviewsPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="🔍 후보자 이름 또는 직무 검색"
-              className="max-w-xs"
+              className="w-full sm:w-auto sm:max-w-xs"
             />
             <select
               value={positionFilter}
