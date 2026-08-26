@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { findMatch, recommendLeastConflictSlots, requiresRoom } from "./matching";
+import { findMatch, isImmediatelyBookable, recommendLeastConflictSlots, requiresRoom } from "./matching";
 import { generateUpcomingSlots } from "./slots";
 
 describe("requiresRoom", () => {
@@ -210,6 +210,42 @@ describe("recommendLeastConflictSlots", () => {
   it("excludeSlots에 있는 시간은 추천 목록에서 아예 빠진다", () => {
     const recs = recommendLeastConflictSlots([], [], false, 5, [targetSlot]);
     expect(recs.some((r) => r.slot === targetSlot)).toBe(false);
+  });
+
+  // 회귀: 면접실이 없어서 막힌 시간이 conflicts=[] 로 나가면, 소비자
+  // (app/api/respond/[token]/route.ts)가 "전원 가능"으로 읽어 후보자에게 잘못 안내한다.
+  it("면접관은 전원 가능해도 빈 면접실이 없으면 바로 확정 가능으로 보지 않는다", () => {
+    const target = upcoming[0];
+    const recs = recommendLeastConflictSlots(
+      // 이 면접관은 target 시간에만 가능 → 전원 동시 가능 시간이 target 하나뿐이라
+      // minScore > 0 이 되어 "대안" 경로를 타게 된다
+      [{ id: "p1", name: "김면접", role: "", busy_slots: upcoming.slice(1) }],
+      // 그런데 하나뿐인 면접실이 하필 target 시간에 사용 중이다
+      [{ id: "r1", name: "면접실1", busy_slots: [target], capacity: 10, active: true }],
+      true,
+      5,
+      [],
+      30,
+    );
+    const hit = recs.find((r) => r.slot === target);
+    expect(hit).toBeDefined();
+    expect(hit!.conflicts).toEqual([]);
+    expect(hit!.roomBlocked).toBe(true);
+    // 소비자는 conflicts 만 보지 말고 이 함수로 판정해야 한다
+    expect(isImmediatelyBookable(hit!)).toBe(false);
+  });
+
+  it("면접관 전원 가능하고 빈 면접실도 있으면 바로 확정 가능으로 본다", () => {
+    const recs = recommendLeastConflictSlots(
+      [{ id: "p1", name: "김면접", role: "", busy_slots: [] }],
+      [{ id: "r1", name: "면접실1", busy_slots: [], capacity: 10, active: true }],
+      true,
+      5,
+      [],
+      30,
+    );
+    expect(recs.length).toBeGreaterThan(0);
+    expect(recs.every(isImmediatelyBookable)).toBe(true);
   });
 
   it("전원 동시 가능 시간이 하나도 없으면 최대 3개까지만 대안으로 반환한다", () => {
