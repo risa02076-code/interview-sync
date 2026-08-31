@@ -8,7 +8,7 @@ import {
 } from "@/lib/slots";
 import { sendCandidateInvite } from "@/lib/sendCandidateInvite";
 import { sendInterviewerInvites } from "@/lib/sendInterviewerInvites";
-import { recommendLeastConflictSlots, requiresRoom } from "@/lib/matching";
+import { isImmediatelyBookable, recommendLeastConflictSlots, requiresRoom } from "@/lib/matching";
 import { requestMoreAvailability, MAX_AVAILABILITY_ROUNDS } from "@/lib/requestMoreAvailability";
 import { requestPriorityConfirmation } from "@/lib/requestPriorityConfirmation";
 import { confirmFromPriorities } from "@/lib/confirmFromPriorities";
@@ -60,7 +60,7 @@ export async function GET(_request: Request, { params }: Params) {
         interview.excluded_slots ?? [],
         interviewDurationMinutes(interview.interview_type),
       )
-        .filter((r) => r.conflicts.length === 0)
+        .filter(isImmediatelyBookable)
         .map((r) => ({ key: r.slot, label: formatSlotLabel(r.slot) }));
     }
 
@@ -466,7 +466,7 @@ export async function POST(request: Request, { params }: Params) {
           [],
           interviewDurationMinutes(interview.interview_type),
         );
-        const hasPerfectMatch = recommendations.length > 0 && recommendations[0].conflicts.length === 0;
+        const hasPerfectMatch = recommendations.length > 0 && isImmediatelyBookable(recommendations[0]);
 
         const origin = new URL(request.url).origin;
 

@@ -89,7 +89,25 @@ export function findMatch(
   };
 }
 
-export type SlotRecommendation = { slot: string; conflicts: string[] };
+export type SlotRecommendation = {
+  slot: string;
+  /** 이 시간에 참석할 수 없다고 답한 면접관 이름 */
+  conflicts: string[];
+  /**
+   * 면접관은 전원 가능한데 쓸 수 있는 빈 면접실이 없어 막힌 경우.
+   *
+   * conflicts 는 면접관 이름만 담기 때문에, 이 값을 함께 보지 않으면 면접실이 없어
+   * 확정할 수 없는 시간이 "충돌 0 = 확정 가능"으로 읽힌다. 실제로 그 어긋남 때문에
+   * 후보자에게 확정할 수 없는 시간이 "가능"으로 안내되고 있었다 — 판정은 반드시
+   * isImmediatelyBookable 을 쓴다.
+   */
+  roomBlocked: boolean;
+};
+
+/** 지금 이 시간에 바로 확정할 수 있는가 — 면접관 전원 가능 + 쓸 수 있는 빈 면접실 확보. */
+export function isImmediatelyBookable(r: SlotRecommendation): boolean {
+  return r.conflicts.length === 0 && !r.roomBlocked;
+}
 
 /** 충돌이 있는(완전히 겹치지 않는 시간이 하나도 없는) 경우에만 이 개수로 제한한다 */
 const MAX_FALLBACK_RECOMMENDATIONS = 3;
@@ -129,12 +147,12 @@ export function recommendLeastConflictSlots(
             isRoomUsable(r, panelInterviewers.length) &&
             span.every((slot) => !r.busy_slots.includes(slot)),
         );
-      return { slot: s.key, conflicts, score: conflicts.length + (roomBlocked ? 1 : 0) };
+      return { slot: s.key, conflicts, roomBlocked, score: conflicts.length + (roomBlocked ? 1 : 0) };
     });
   if (!scored.length) return [];
 
   const minScore = Math.min(...scored.map((s) => s.score));
   const tied = scored.filter((s) => s.score === minScore);
   const limited = minScore === 0 ? tied : tied.slice(0, MAX_FALLBACK_RECOMMENDATIONS);
-  return limited.map(({ slot, conflicts }) => ({ slot, conflicts }));
+  return limited.map(({ slot, conflicts, roomBlocked }) => ({ slot, conflicts, roomBlocked }));
 }
