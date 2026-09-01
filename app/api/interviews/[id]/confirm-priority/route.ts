@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { matchAndPersist } from "@/lib/applyMatch";
 import { sendConfirmationEmail } from "@/lib/sendConfirmationEmail";
+import { ConfirmConflictError } from "@/lib/confirmInterview";
+import { emailErrorReason } from "@/lib/email";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -27,7 +29,25 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "후보자가 제출한 순위에 없는 시간입니다." }, { status: 400 });
   }
 
-  const updated = await matchAndPersist(supabase, id, [slot], interview.panel, interview.interview_type);
+  let updated;
+  try {
+    updated = await matchAndPersist(supabase, id, [slot], interview.panel, interview.interview_type);
+  } catch (e) {
+    if (e instanceof ConfirmConflictError) {
+      return NextResponse.json(
+        { error: "그 사이 면접관 일정이 바뀌어 이 시간은 더 이상 가능하지 않습니다. 다른 순위를 선택해주세요." },
+        { status: 409 },
+      );
+    }
+    // 저장 자체가 실패한 경우(마이그레이션 누락 등) — 원인을 화면에 그대로 보여줘야
+    // 리크루터가 뭘 해야 할지 판단할 수 있다. 조용히 삼키면 버튼을 몇 번이고 눌러보게
+    // 만든다.
+    console.error(`[confirm-failed] interview=${id}, slot=${slot}, error=${emailErrorReason(e)}`);
+    return NextResponse.json(
+      { error: `확정 저장에 실패했습니다(사유: ${emailErrorReason(e)})` },
+      { status: 500 },
+    );
+  }
 
   if (updated?.status !== "confirmed") {
     return NextResponse.json(

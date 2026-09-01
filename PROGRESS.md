@@ -518,6 +518,45 @@ Supabase Table Editor에서 보는 읽기용 뷰의 컬럼 라벨만 `migration_
 않는다(아래 "알려진 한계" 참고). 그리고 이 무작위 대조는 저장소에 스크립트로 남기지
 않았다 — 필요하면 다시 만들어야 한다.
 
+### 2026-09-01 — 확정 저장 실패를 리크루터가 볼 수 있게 함 (리스크 관리 4번째 세트)
+
+**⑬ `confirmInterviewAtomically`가 던지는 에러를 호출부 세 곳 중 두 곳이 안 잡고 있었다**
+(`lib/confirmFromPriorities.ts`, `app/api/interviews/[id]/confirm-priority/route.ts`)
+
+⑨에서 확정 저장을 `confirm_interview` DB 함수 하나로 묶으면서, 저장이 반쪽으로 남는
+사고와 동시 확정은 막았다. 그런데 "저장이 실패하면 에러를 잡지 말고 그대로 던진다"는
+그 설계가 안전한 건 DB 함수 **안**에서까지고, 그 에러를 부르는 **바깥쪽**에서 누가
+책임지고 사람에게 보여줄지는 별개 문제다. 실제로 호출하는 세 곳을 코드로 확인해보니:
+
+- `app/api/interviews/[id]/manual-confirm/route.ts` (리크루터 수동 확정) — `try/catch`로
+  잡아서 에러 메시지를 그대로 돌려주고 있었다.
+- `app/api/interviews/[id]/confirm-priority/route.ts` (리크루터의 순위 확정) — 안 잡고
+  있었다. 실패하면 리크루터가 원인을 알 수 없는 오류만 보게 된다.
+- `lib/confirmFromPriorities.ts` → `app/api/respond/[token]/route.ts` (면접관 전원 응답
+  완료 시 자동 확정) — 이 파일 전체에 `try` 블록이 하나도 없었다. 더 나쁜 건 이 실패를
+  마주치는 사람이 **면접관**이라는 것 — 면접관은 대시보드 접근 권한이 없어 원인을 스스로
+  판단할 방법이 없고, 리크루터에게도 아무 기록이 안 남아 이 실패 자체를 아무도 몰랐다.
+
+**고친 방식.** 두 경로 모두 `try/catch`를 추가하되, 실패를 마주치는 사람이 다르므로
+처리 방식도 다르게 했다.
+
+- `confirm-priority`(리크루터가 직접 부름): `ConfirmConflictError`(순간적인 겹침)는
+  기존 409 안내 그대로, 그 외 저장 실패는 사유를 담아 화면에 그대로 보여준다 — 리크루터가
+  다음에 뭘 해야 할지 스스로 판단할 수 있는 사람이라 정보를 숨길 이유가 없다.
+- `confirmFromPriorities`(면접관의 응답 제출이 방아쇠): 에러를 화면에 던지지 않는다 —
+  응답 제출 자체는 이미 성공했으니 면접관에게는 정상 응답을 돌려줘야 한다. 대신
+  `ConfirmConflictError`면 다음 순위로 계속 시도하고(이 순간만 막힌 것뿐이라 재시도가
+  맞다), 그 외 실패는 재시도해도 똑같이 실패할 뿐이니 반복하지 않고 바로
+  `interview.note`에 `⚠️` 접두사로 사유를 남긴다(기존 이메일 발송 실패 표시와 같은
+  관례) — 리크루터가 대시보드에서 발견하고 직접 확정할 수 있게.
+- 두 곳 다 `console.error`에 `[confirm-failed]` 태그를 붙여 Vercel Logs에서 찾을 수 있게
+  했다(`[email-failed]`와 같은 관례).
+
+**검증.** `lib/confirmFromPriorities.ts`는 이번에 고치기 전까지 테스트가 전혀 없던
+파일이었다. `lib/confirmFromPriorities.test.ts`를 새로 만들어 정상 확정·겹침 시 다음
+순위로 재시도·저장 실패 시 note 기록 후 재시도 안 함, 세 가지를 커버했다. `npm run
+verify` 통과, 테스트 209 → **212개**.
+
 ## 개발 중 실제로 걸린 함정 (같은 데서 또 막히지 않도록)
 
 - **`npm run build` 뒤에 `next dev`를 띄우면 API가 404** — 프로덕션 `.next`를 dev 서버가
