@@ -25,6 +25,7 @@ function fakeSupabase(
 ) {
   let rpcCallCount = 0;
   const updateCalls: { table: string; payload: Record<string, unknown> }[] = [];
+  const rpcCalls: Record<string, unknown>[] = [];
 
   const selectResult = (name: string) => {
     const rows = name === "interviewers" ? panel : freeRooms;
@@ -43,21 +44,22 @@ function fakeSupabase(
         return { eq: async () => ({ data: null, error: null }) };
       },
     }),
-    rpc: async () => {
+    rpc: async (_fn: string, args: Record<string, unknown>) => {
+      rpcCalls.push(args);
       const result = rpcResults[Math.min(rpcCallCount, rpcResults.length - 1)];
       rpcCallCount++;
       return { data: result.data ?? null, error: result.error ?? null };
     },
   } as unknown as SupabaseClient;
 
-  return { client, updateCalls, rpcCallCount: () => rpcCallCount };
+  return { client, updateCalls, rpcCalls, rpcCallCount: () => rpcCallCount };
 }
 
 const baseInterview = { id: "iv-1", panel: PANEL, interview_type: "1차 대면" };
 
 describe("confirmFromPriorities", () => {
   it("첫 순위가 그대로 확정되면 note를 건드리지 않는다", async () => {
-    const { client, updateCalls, rpcCallCount } = fakeSupabase([
+    const { client, updateCalls, rpcCalls, rpcCallCount } = fakeSupabase([
       { data: { id: "iv-1", status: "confirmed", matched_slot: TEN } },
     ]);
 
@@ -66,6 +68,8 @@ describe("confirmFromPriorities", () => {
     expect(ok).toBe(true);
     expect(rpcCallCount()).toBe(1);
     expect(updateCalls).toEqual([]);
+    // 순위를 건너뛴 게 아니니 설명할 것도 없다.
+    expect(rpcCalls[0].p_note).toBeNull();
   });
 
   it("이 순간 다른 확정과 겹쳐(PT409) 막히면 다음 순위로 계속 시도한다", async () => {
@@ -112,7 +116,7 @@ describe("confirmFromPriorities", () => {
       { id: "p1", name: "배지훈", role: "디자이너", busy_slots: [NINE_30] },
       { id: "p2", name: "오세훈", role: "리드", busy_slots: [] },
     ];
-    const { client, updateCalls, rpcCallCount } = fakeSupabase(
+    const { client, updateCalls, rpcCalls, rpcCallCount } = fakeSupabase(
       [{ data: { id: "iv-1", status: "confirmed", matched_slot: TEN_30 } }],
       busyPanel,
     );
@@ -126,6 +130,10 @@ describe("confirmFromPriorities", () => {
     // 1순위(TEN)를 건너뛰고 곧바로 2순위(TEN_30)로 확정을 시도했으므로 rpc는 한 번만 불린다.
     expect(rpcCallCount()).toBe(1);
     expect(updateCalls).toEqual([]);
+    // 리크루터가 "왜 1순위가 아니라 2순위로 확정됐는지" 화면에서 바로 알 수 있어야 한다.
+    expect(rpcCalls[0].p_note).toContain("1순위");
+    expect(rpcCalls[0].p_note).toContain("배지훈");
+    expect(rpcCalls[0].p_note).toContain("2순위");
   });
 
   it("모든 순위에 쉬는 시간 없음 경고가 있으면, 그래도 1순위 그대로 확정한다", async () => {
@@ -134,7 +142,7 @@ describe("confirmFromPriorities", () => {
       { id: "p1", name: "배지훈", role: "디자이너", busy_slots: [NINE_30, TEN] },
       { id: "p2", name: "오세훈", role: "리드", busy_slots: [] },
     ];
-    const { client, updateCalls, rpcCallCount } = fakeSupabase(
+    const { client, updateCalls, rpcCalls, rpcCallCount } = fakeSupabase(
       [{ data: { id: "iv-1", status: "confirmed", matched_slot: TEN }, error: undefined }],
       busyPanel,
     );
@@ -147,5 +155,7 @@ describe("confirmFromPriorities", () => {
     expect(ok).toBe(true);
     expect(rpcCallCount()).toBe(1);
     expect(updateCalls).toEqual([]);
+    // 건너뛴 순위가 없으니(그대로 1순위) 설명도 없다.
+    expect(rpcCalls[0].p_note).toBeNull();
   });
 });

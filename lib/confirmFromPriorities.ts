@@ -3,7 +3,7 @@ import { findMatch, requiresRoom, type Interviewer } from "./matching";
 import type { ManagedRoom } from "./rooms";
 import { findNoRestBefore } from "./backToBack";
 import { confirmInterviewAtomically, ConfirmConflictError } from "./confirmInterview";
-import { interviewDurationMinutes, occupiedSlots } from "./slots";
+import { interviewDurationMinutes, occupiedSlots, formatSlotLabel } from "./slots";
 import { emailErrorReason } from "./email";
 
 type Interview = {
@@ -25,6 +25,10 @@ type Interview = {
  * 순위 자체를 어기는 게 아니라, "전원 가능"이라는 조건을 만족하는 여러 시간
  * 중 더 나은 쪽을 고르는 것뿐이다. 어느 시간으로 확정되든, 경고가 남아있으면
  * 리크루터가 발송 직전 화면에서 보게 된다(app/interviews/[id]/page.tsx).
+ *
+ * 이렇게 순위를 건너뛴 경우, 그 사실을 note에 남긴다 — 리크루터가 상세 화면에서
+ * "후보자 1순위를 냈는데 왜 다른 시간으로 확정됐지?"라고 의아해하지 않도록, 왜
+ * 건너뛰었는지(어느 면접관이 걸렸는지)를 그 자리에서 바로 알 수 있게 하기 위함이다.
  *
  * 확정 메일은 여기서 자동으로 보내지 않는다 — "조율 완료" 상태로만 남겨두고,
  * 리크루터가 상세 페이지에서 "확정 메일 발송" 버튼을 직접 눌러야 실제로 후보자·
@@ -49,14 +53,16 @@ export async function confirmFromPriorities(supabase: SupabaseClient, interview:
   const roomRequired = requiresRoom(interview.interview_type);
 
   // 순위마다 "지금도 전원 가능한가"만 먼저 계산한다(저장은 아직 안 함). findMatch는
-  // 순수 함수라 여기서 여러 번 불러도 데이터를 건드리지 않는다.
+  // 순수 함수라 여기서 여러 번 불러도 데이터를 건드리지 않는다. rank(0부터)는
+  // 나중에 "몇 순위를 건너뛰었는지" 설명할 때 그대로 쓴다.
   const viable = interview.preferred_slots
-    .map((slot) => findMatch([slot], panel, roomList, false, roomRequired, durationMinutes))
-    .filter((r) => r.status === "confirmed" && r.matchedSlot !== null)
-    .map((r) => ({
-      slot: r.matchedSlot as string,
-      roomId: r.roomId,
-      noRest: findNoRestBefore(panel, r.matchedSlot as string).length > 0,
+    .map((slot, rank) => ({ rank, result: findMatch([slot], panel, roomList, false, roomRequired, durationMinutes) }))
+    .filter((v) => v.result.status === "confirmed" && v.result.matchedSlot !== null)
+    .map((v) => ({
+      rank: v.rank,
+      slot: v.result.matchedSlot as string,
+      roomId: v.result.roomId,
+      noRestNames: findNoRestBefore(panel, v.result.matchedSlot as string).map((p) => p.name),
     }));
 
   if (!viable.length) {
@@ -73,18 +79,26 @@ export async function confirmFromPriorities(supabase: SupabaseClient, interview:
   // 경고 없는 순위가 있으면 그걸 먼저 시도하고, 나머지는 원래 순위 순서 그대로
   // 뒤에 남겨둔다(그 경고 없는 시간마저 이 순간 다른 확정과 겹쳐 막히면 결국
   // 원래 순위대로 재시도해야 하기 때문).
-  const preferred = viable.find((v) => !v.noRest) ?? viable[0];
+  const preferred = viable.find((v) => !v.noRestNames.length) ?? viable[0];
+  const skipped = preferred !== viable[0] ? viable[0] : null;
   const tryOrder = [preferred, ...viable.filter((v) => v !== preferred)];
 
   for (const candidate of tryOrder) {
     try {
+      // preferred가 실제로 그대로 확정될 때만 "왜 순위를 건너뛰었는지" note를 남긴다.
+      // preferred조차 이 순간 다른 확정과 겹쳐 막히면(드문 경우) 원래 순위대로
+      // 재시도하는 것뿐이니, 그 케이스까지 설명을 붙이면 오히려 혼란스럽다.
+      const note =
+        candidate === preferred && skipped
+          ? `ℹ️ 후보자 ${skipped.rank + 1}순위(${formatSlotLabel(skipped.slot)})는 ${skipped.noRestNames.join(", ")}이 직전 면접과 쉬는 시간 없이 이어져, 전원 가능한 ${preferred.rank + 1}순위(${formatSlotLabel(preferred.slot)})로 대신 확정했습니다.`
+          : null;
       const result = await confirmInterviewAtomically(supabase, {
         interviewId: interview.id,
         slot: candidate.slot,
         span: occupiedSlots(candidate.slot, durationMinutes),
         roomId: candidate.roomId,
         status: "confirmed",
-        note: null,
+        note,
         preferredSlots: interview.preferred_slots,
       });
       if (result?.status === "confirmed") {
