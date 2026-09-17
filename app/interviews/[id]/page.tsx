@@ -12,6 +12,7 @@ import { isRoomUsable } from "@/lib/rooms";
 import { SlotGrid, type GridSlot } from "@/components/slot-grid";
 import { buildResponseMatrix, heatInputs, type SlotState } from "@/lib/responseMatrix";
 import { groupBusySlotsByDay, formatRespondedAt } from "@/lib/busySlots";
+import { findNoRestBefore } from "@/lib/backToBack";
 
 type PriorityConfirmRecord = {
   interviewer_id: string | null;
@@ -172,6 +173,17 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
   }, [interview, allSlots, needsRoom]);
 
   const durationMinutes = interview ? interviewDurationMinutes(interview.interview_type) : 30;
+
+  /**
+   * "이 시간 가능한가요?"라는 질문에 면접관은 그 시간 하나만 보고 답하지, 직전
+   * 면접과 쉬는 시간 없이 이어지는지는 스스로 따지지 않는다. 확정된(될) 시간을
+   * 기준으로 기계적으로 감지해서, 발송 직전 리크루터에게만 보여준다 — 후보자·
+   * 면접관은 이 화면에 접근하지 않으므로 자연히 리크루터만 보게 된다.
+   */
+  const noRestInterviewers = useMemo(() => {
+    if (!interview?.matched_slot) return [];
+    return findNoRestBefore(interview.panelDetail, interview.matched_slot);
+  }, [interview]);
 
   /**
    * 응답 현황 히트맵의 원본. 계산은 lib/responseMatrix.ts의 순수 함수가 하고,
@@ -907,6 +919,20 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
               닫기
             </Button>
           </div>
+        </div>
+      )}
+
+      {displayStatus === "coordinated" && noRestInterviewers.length > 0 && (
+        <div className="flex flex-col gap-1 rounded-md border border-amber-500 p-3">
+          <p className="text-sm font-medium text-amber-600">
+            ⚠️ 이 면접관은 바로 직전 면접이 끝나고 쉬는 시간 없이 이어집니다
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {noRestInterviewers.map((p) => p.name).join(", ")}
+            {" — "}
+            면접관이 &ldquo;가능하다&rdquo;고 답한 건 이 시간 하나만 보고 답한 것이라, 직전
+            면접과 이어지는지는 별도로 확인이 필요합니다.
+          </p>
         </div>
       )}
 

@@ -7,7 +7,7 @@ const TEN = "2024-01-02T01:00:00.000Z"; // 10:00 KST
 const TEN_30 = "2024-01-02T01:30:00.000Z"; // 10:30 KST
 
 const PANEL = ["p1", "p2"];
-const freePanel = [
+const freePanel: { id: string; name: string; role: string; busy_slots: string[] }[] = [
   { id: "p1", name: "배지훈", role: "디자이너", busy_slots: [] },
   { id: "p2", name: "오세훈", role: "리드", busy_slots: [] },
 ];
@@ -19,12 +19,15 @@ const freeRooms = [{ id: "r1", name: "면접실 A", busy_slots: [] }];
  * 호출 순서대로 미리 정해둘 수 있어서, "첫 순위는 막히고 두 번째 순위는 된다" 같은
  * 시나리오를 재현할 수 있다.
  */
-function fakeSupabase(rpcResults: Array<{ data?: unknown; error?: { code?: string; message: string } }>) {
+function fakeSupabase(
+  rpcResults: Array<{ data?: unknown; error?: { code?: string; message: string } }>,
+  panel: typeof freePanel = freePanel,
+) {
   let rpcCallCount = 0;
   const updateCalls: { table: string; payload: Record<string, unknown> }[] = [];
 
   const selectResult = (name: string) => {
-    const rows = name === "interviewers" ? freePanel : freeRooms;
+    const rows = name === "interviewers" ? panel : freeRooms;
     return {
       in: async () => ({ data: rows }),
       // rooms는 .in() 없이 select 자체를 await한다
@@ -101,5 +104,48 @@ describe("confirmFromPriorities", () => {
     expect(updateCalls[0].payload.note).toContain("does not exist");
     // 아직 다른 순위로 리크루터가 직접 확정할 여지가 있으니 status는 건드리지 않는다.
     expect(updateCalls[0].payload).not.toHaveProperty("status");
+  });
+
+  it("1순위가 직전 면접과 쉬는 시간 없이 이어지고 2순위는 그렇지 않으면, 2순위를 먼저 시도한다", async () => {
+    const NINE_30 = "2024-01-02T00:30:00.000Z"; // 9:30 KST — TEN(10:00) 바로 앞 슬롯
+    const busyPanel = [
+      { id: "p1", name: "배지훈", role: "디자이너", busy_slots: [NINE_30] },
+      { id: "p2", name: "오세훈", role: "리드", busy_slots: [] },
+    ];
+    const { client, updateCalls, rpcCallCount } = fakeSupabase(
+      [{ data: { id: "iv-1", status: "confirmed", matched_slot: TEN_30 } }],
+      busyPanel,
+    );
+
+    const ok = await confirmFromPriorities(client, {
+      ...baseInterview,
+      preferred_slots: [TEN, TEN_30],
+    });
+
+    expect(ok).toBe(true);
+    // 1순위(TEN)를 건너뛰고 곧바로 2순위(TEN_30)로 확정을 시도했으므로 rpc는 한 번만 불린다.
+    expect(rpcCallCount()).toBe(1);
+    expect(updateCalls).toEqual([]);
+  });
+
+  it("모든 순위에 쉬는 시간 없음 경고가 있으면, 그래도 1순위 그대로 확정한다", async () => {
+    const NINE_30 = "2024-01-02T00:30:00.000Z"; // TEN(10:00) 바로 앞 슬롯 — TEN_30 앞 슬롯은 TEN 자신
+    const busyPanel = [
+      { id: "p1", name: "배지훈", role: "디자이너", busy_slots: [NINE_30, TEN] },
+      { id: "p2", name: "오세훈", role: "리드", busy_slots: [] },
+    ];
+    const { client, updateCalls, rpcCallCount } = fakeSupabase(
+      [{ data: { id: "iv-1", status: "confirmed", matched_slot: TEN }, error: undefined }],
+      busyPanel,
+    );
+
+    const ok = await confirmFromPriorities(client, {
+      ...baseInterview,
+      preferred_slots: [TEN, TEN_30],
+    });
+
+    expect(ok).toBe(true);
+    expect(rpcCallCount()).toBe(1);
+    expect(updateCalls).toEqual([]);
   });
 });
