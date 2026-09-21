@@ -89,6 +89,74 @@ PRD는 [PRD.md](./PRD.md) 참고.
 - GitHub Actions — push·PR마다 lint → 타입검사 → 테스트 (`.github/workflows/ci.yml`)
 - Tailwind CSS + shadcn/ui
 
+## 구조
+
+`app/`는 화면과 요청을 받는 곳, `lib/`는 실제 판단(매칭·확정) 로직, `supabase/`는 저장된
+데이터, `app/api/cron/`은 사람 없이 매일 자동으로 도는 작업이다 — 아래 트리는 이 네 가지
+역할별로 나뉜다.
+
+핵심 흐름 하나를 따라가면 전체 구조가 빨리 읽힌다 — **후보자가 응답 링크를 열면**
+(`app/respond/[token]/page.tsx`) **→ 제출이 API로 들어가고**
+(`app/api/respond/[token]/route.ts`) **→ 우선순위 확정 로직이 판단해**
+(`lib/confirmFromPriorities.ts`) **→ 최종 저장은 트랜잭션으로 묶어 DB에 반영한다**
+(`lib/confirmInterview.ts`). 아래 트리는 이 흐름과 그 주변 기능들의 위치를 보여준다.
+각 설계 판단의 이유는 [PROGRESS.md](./PROGRESS.md)에 더 자세히 있다.
+
+```
+interview-sync/
+├── app/
+│   ├── api/
+│   │   ├── respond/[token]/route.ts        # 응답 토큰 하나로 후보자·면접관·재조율 4종 요청을 전부 처리하는 상태 머신
+│   │   ├── interviews/                     # 케이스 CRUD·확정·수동확정·재발송 API
+│   │   ├── interviewers/                   # 면접관 CRUD·초대 API
+│   │   ├── rooms/                          # 면접실 CRUD API
+│   │   ├── cron/                           # 배치 작업 진입점 — 사람 없이 매일 자동 실행됨
+│   │   │   ├── consistency-check/route.ts  # 매일 09:15 데이터 정합성 검사
+│   │   │   └── reminders/route.ts          # 매일 09:00 미응답 독촉 + 전날 리마인더
+│   │   └── health/route.ts                 # 외부 모니터링용 헬스체크 — DB 연결까지 확인
+│   ├── interviews/
+│   │   ├── page.tsx                        # 조율 대시보드 (목록)
+│   │   ├── new/page.tsx                    # 후보자 등록 폼
+│   │   └── [id]/page.tsx                   # 케이스 상세 — 히트맵·확정·쉬는시간 경고 배너
+│   ├── interviewers/page.tsx               # 면접관 관리 (이메일·캘린더 직접 편집)
+│   ├── rooms/page.tsx                      # 면접실 관리 (정원·사용현황 격자)
+│   └── respond/[token]/page.tsx            # 후보자·면접관이 로그인 없이 여는 응답 화면
+├── lib/                                    # 판단 로직 전부 — 화면·API 라우트는 이 함수들을 호출만 함
+│   ├── matching.ts                         # findMatch·recommendLeastConflictSlots — 매칭 판정의 단일 원본(같은 계산을 두 번 짜지 않도록 여기 하나만 둠)
+│   ├── slots.ts                            # 슬롯 생성·소요시간·KST 시간대 계산의 단일 원본
+│   ├── backToBack.ts                       # 쉬는 시간 없는 연속 배정 감지 (경고용 — 매칭 자체는 안 막음)
+│   ├── confirmInterview.ts                 # 확정 저장 3곳(면접·면접관·면접실)을 트랜잭션(전부 되거나 전부 안 되게) 하나로 묶는 DB 함수 호출
+│   ├── confirmFromPriorities.ts            # 후보자 순위 중 전원 가능한 시간으로 자동 확정
+│   ├── checkConsistency.ts                 # 정합성 위반 7종의 단일 원본 — 크론과 발송 직전 검사가 함께 씀
+│   ├── rooms.ts                            # 면접실 정원·사용여부 판단 규칙
+│   ├── responseMatrix.ts                   # 응답 현황 히트맵 계산 (순수 함수: 입력만 보고 계산, DB를 안 건드림)
+│   ├── email.ts                            # 발송 킬 스위치·실패 사유 공통 처리 — 모든 메일 발송이 여길 거침
+│   ├── sendInterviewerInvites.ts           # ① 면접관 초대 메일
+│   ├── sendCandidateInvite.ts              # ② 후보자 초대 메일
+│   ├── requestPriorityConfirmation.ts      # ③ 후보자 순위를 면접관 전원에게 재확인 요청
+│   ├── sendConfirmationEmail.ts            # ④ 최종 확정 메일 (리크루터가 버튼을 눌러야 나감)
+│   ├── sendReminders.ts                    # 미응답 독촉 + 전날 리마인더 (크론이 호출)
+│   └── requestMoreAvailability.ts          # 전원 공통 시간 없을 때 조회 기간을 넓혀 재문의
+├── components/
+│   ├── slot-grid.tsx                       # 30분 격자 히트맵 — 대시보드·상세·응답 화면이 공유
+│   └── ui/                                 # shadcn/ui 기본 컴포넌트
+├── supabase/
+│   ├── schema.sql                          # DB 스키마 — ⚠️ 최신 아님, migration_*.sql을 같이 실행해야 함
+│   └── migration_*.sql                     # schema.sql 이후 추가된 변경분 (파일명 순서대로 실행)
+├── scripts/
+│   ├── verify-confirm-transaction.ts       # 확정 트랜잭션의 원자성·동시성을 실제 DB로 검증
+│   └── backfill-busy-slots.ts              # 소요시간 도입 이전 확정 건의 busy_slots 빈틈을 채움
+├── PRD.md                                  # 기획 문서
+├── PROGRESS.md                             # 세션 인계용 진행 기록 — 코드와 다르면 코드가 맞다
+└── README.md
+```
+
+`app/auth/*`, `app/protected/*`, `components/{hero,auth-button,deploy-button,next-logo,
+supabase-logo,theme-switcher,logout-button}.tsx`, `components/tutorial/*`는 Next.js+Supabase
+스타터 킷을 그대로 두고 시작한 잔재다. 이 서비스엔 로그인이 없어서(위 "알려진 한계" 참고)
+실제 화면 어디에서도 참조되지 않는다 — 지우기 전에 정말 아무 데서도 안 쓰는지 한 번 더
+확인이 필요한 삭제 후보로 남겨둔다.
+
 ## 로컬 실행
 
 ```bash
