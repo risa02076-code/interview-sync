@@ -15,6 +15,7 @@ export type ViolationKind =
   | "unexpected_room"
   | "interviewer_double_booked"
   | "room_double_booked"
+  | "candidate_double_booked"
   | "unnotified_past_slot"
   | "outside_business_hours";
 
@@ -28,6 +29,7 @@ export type Violation = {
 export type ConsistencyCheckInterview = {
   id: string;
   candidate_name: string;
+  candidate_email: string | null;
   interview_type: string;
   panel: string[];
   matched_slot: string | null;
@@ -183,6 +185,40 @@ export function findConsistencyViolations(
     }
   }
 
+  // 같은 후보자가 서로 다른 면접 케이스 두 건에 겹치는 시간으로 확정되면 안 된다
+  // — 사람은 동시에 두 면접에 있을 수 없다. findMatch(lib/matching.ts)는 면접관·
+  // 면접실 겹침만 확인하고 "이 후보자가 다른 케이스에도 확정돼 있는지"는 애초에
+  // 알 방법이 없다(면접 한 건씩만 보고 판단하는 구조라서) — 그래서 이 위반은
+  // 매칭 단계가 아니라 여기(전체 데이터를 훑는 정합성 검사)에서만 잡을 수 있다.
+  //
+  // 이 스키마엔 후보자 고유 id가 없어, 이메일이 있으면 이메일로(더 정확한 신호),
+  // 없으면 이름으로 묶는다 — 이메일이 다르면 동명이인이라도 애초에 같은 그룹으로
+  // 안 묶여 오탐이 안 나고, 이메일이 없는 경우에만 이름만으로 판단하던 예전 동작이
+  // 그대로 남는다(둘 중 하나라도 이메일이 없으면 대조할 수 없으니 이름으로 물러난다).
+  const candidateKey = (iv: ConsistencyCheckInterview) =>
+    iv.candidate_email?.trim().toLowerCase() || iv.candidate_name.trim();
+  const byCandidate = new Map<string, ConsistencyCheckInterview[]>();
+  for (const iv of confirmed) {
+    const key = candidateKey(iv);
+    const list = byCandidate.get(key) ?? [];
+    list.push(iv);
+    byCandidate.set(key, list);
+  }
+  for (const [, ivs] of byCandidate) {
+    for (const iv of ivs) {
+      const clashes = ivs.filter((other) => other.id !== iv.id && overlapping(iv, other));
+      if (!clashes.length) continue;
+      violations.push({
+        interviewId: iv.id,
+        candidateName: iv.candidate_name,
+        kind: "candidate_double_booked",
+        detail: `같은 후보자가 서로 다른 면접에 겹치는 시간으로 확정됨 — ${describe(iv)} ↔ ${clashes
+          .map(describe)
+          .join(", ")}`,
+      });
+    }
+  }
+
   return violations;
 }
 
@@ -213,7 +249,7 @@ export async function checkSingleInterviewViolations(
 
     const { data, error } = await supabase
       .from("interviews")
-      .select("id,candidate_name,interview_type,panel,matched_slot,room_id,status,confirmation_sent_at")
+      .select("id,candidate_name,candidate_email,interview_type,panel,matched_slot,room_id,status,confirmation_sent_at")
       .gte("matched_slot", windowFrom)
       .lte("matched_slot", windowTo)
       .in("status", ["confirmed", "rescheduled"])
@@ -233,7 +269,7 @@ export async function checkSingleInterviewViolations(
 export async function runConsistencyCheck(supabase: SupabaseClient) {
   const { data, error } = await supabase
     .from("interviews")
-    .select("id,candidate_name,interview_type,panel,matched_slot,room_id,status,confirmation_sent_at");
+    .select("id,candidate_name,candidate_email,interview_type,panel,matched_slot,room_id,status,confirmation_sent_at");
   if (error) throw error;
 
   const violations = findConsistencyViolations((data ?? []) as ConsistencyCheckInterview[]);

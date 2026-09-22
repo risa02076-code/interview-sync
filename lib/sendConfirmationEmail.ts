@@ -42,6 +42,7 @@ export async function sendConfirmationEmail(
     const violations = await checkSingleInterviewViolations(supabase, {
       id: interview.id,
       candidate_name: interview.candidate_name,
+      candidate_email: interview.candidate_email,
       interview_type: interview.interview_type,
       panel: interview.panel,
       matched_slot: interview.matched_slot,

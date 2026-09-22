@@ -10,6 +10,7 @@ function base(overrides: Partial<ConsistencyCheckInterview>): ConsistencyCheckIn
   return {
     id: "iv1",
     candidate_name: "후보자1",
+    candidate_email: null,
     interview_type: "1차 대면",
     panel: ["p1"],
     matched_slot: SLOT_A,
@@ -120,6 +121,42 @@ describe("findConsistencyViolations", () => {
     const doubled = violations.filter((v) => v.kind === "room_double_booked");
     expect(doubled).toHaveLength(2);
     expect(doubled.map((v) => v.interviewId).sort()).toEqual(["iv1", "iv2"]);
+  });
+
+  it("같은 후보자(이메일까지 같음)가 겹치는 시간에 서로 다른 면접 두 건으로 확정되면 둘 다 잡는다", () => {
+    const violations = findConsistencyViolations([
+      base({ id: "iv1", candidate_name: "이하은", candidate_email: "haeun@ex.com", panel: ["p1"], room_id: "r1", matched_slot: SLOT_A }),
+      base({ id: "iv2", candidate_name: "이하은", candidate_email: "haeun@ex.com", panel: ["p2"], room_id: "r2", matched_slot: SLOT_B }),
+    ]);
+    const doubled = violations.filter((v) => v.kind === "candidate_double_booked");
+    expect(doubled).toHaveLength(2);
+    expect(doubled.map((v) => v.interviewId).sort()).toEqual(["iv1", "iv2"]);
+  });
+
+  it("같은 후보자라도 겹치지 않는 시간이면 잡지 않는다", () => {
+    const violations = findConsistencyViolations([
+      base({ id: "iv1", candidate_name: "이하은", panel: ["p1"], room_id: "r1", matched_slot: SLOT_A }),
+      base({ id: "iv2", candidate_name: "이하은", panel: ["p2"], room_id: "r2", matched_slot: SLOT_C }),
+    ]);
+    expect(violations.filter((v) => v.kind === "candidate_double_booked")).toEqual([]);
+  });
+
+  it("이름은 같아도 이메일이 다르면 동명이인으로 보고 잡지 않는다", () => {
+    const violations = findConsistencyViolations([
+      base({ id: "iv1", candidate_name: "김민준", candidate_email: "minjun1@ex.com", panel: ["p1"], room_id: "r1", matched_slot: SLOT_A }),
+      base({ id: "iv2", candidate_name: "김민준", candidate_email: "minjun2@ex.com", panel: ["p2"], room_id: "r2", matched_slot: SLOT_B }),
+    ]);
+    expect(violations.filter((v) => v.kind === "candidate_double_booked")).toEqual([]);
+  });
+
+  it("이메일이 없으면 이름만으로 판단한다 — 동명이인이면 오탐 가능성이 남는 알려진 한계", () => {
+    // 이메일이 없으면 이름 외에 대조할 신호가 없다. 실제로는 동명이인일 수 있는데도
+    // 겹침으로 잡히는 게, 지금 있는 데이터로 검사할 수 있는 한계다(의도된 동작).
+    const violations = findConsistencyViolations([
+      base({ id: "iv1", candidate_name: "김민준", candidate_email: null, panel: ["p1"], room_id: "r1", matched_slot: SLOT_A }),
+      base({ id: "iv2", candidate_name: "김민준", candidate_email: null, panel: ["p2"], room_id: "r2", matched_slot: SLOT_B }),
+    ]);
+    expect(violations.filter((v) => v.kind === "candidate_double_booked")).toHaveLength(2);
   });
 
   it("재조율(rescheduled)로 확정된 건도 이중 배정 검사 대상에 포함한다", () => {
