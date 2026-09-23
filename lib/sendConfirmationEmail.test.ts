@@ -15,6 +15,10 @@ vi.mock("./email", () => ({
 function fakeSupabase({
   panelInterviewers = [] as { name: string; email: string | null }[],
   sameSlotInterviews = [] as Record<string, unknown>[],
+  // confirmed_without_response 검사(withUnrespondedPanel)가 조회하는 "이 면접관이
+  // 실제로 응답을 제출했는지" 원본 데이터. 비워두면 패널 전원이 미응답으로 계산되니,
+  // 발송 성공을 확인하는 테스트는 여기 채워 넣어야 한다.
+  interviewerResponses = [] as { interview_id: string; interviewer_id: string; status: string; created_at: string }[],
 } = {}) {
   const updateCalls: { table: string; payload: Record<string, unknown> }[] = [];
 
@@ -33,10 +37,11 @@ function fakeSupabase({
     lte() {
       return this;
     },
-    // interviewers 테이블에서는 .in()이 그대로 종료 호출(면접관 목록 조회)이고,
+    // interviewers·response_requests 테이블에서는 .in()이 그대로 종료 호출이고,
     // interviews 테이블에서는 뒤에 .neq()가 이어지는 체이닝(정합성 검사용 조회)이다.
     in() {
       if (name === "interviewers") return Promise.resolve({ data: panelInterviewers });
+      if (name === "response_requests") return Promise.resolve({ data: interviewerResponses });
       return this;
     },
     neq: async () => ({ data: sameSlotInterviews, error: null }),
@@ -120,6 +125,11 @@ describe("sendConfirmationEmail", () => {
   it("같은 시간에 같은 면접관이 배정된 다른 확정 건이 있으면 발송을 보류하고 note를 남긴다", async () => {
     const interview = { ...baseInterview, panel: ["p1"] };
     const { client, updateCalls } = fakeSupabase({
+      // p1은 응답을 마친 상태로 둬서, 여기서 확인하려는 것(겹침)과 무관한
+      // confirmed_without_response 위반이 섞여 나오지 않게 한다.
+      interviewerResponses: [
+        { interview_id: "iv-1", interviewer_id: "p1", status: "submitted", created_at: "2024-01-01T00:00:00.000Z" },
+      ],
       sameSlotInterviews: [
         {
           id: "iv-2",
@@ -169,6 +179,10 @@ describe("sendConfirmationEmail", () => {
         { name: "면접관1", email: "int1@example.com" },
         { name: "면접관2", email: "int2@example.com" },
       ],
+      interviewerResponses: [
+        { interview_id: "iv-1", interviewer_id: "p1", status: "submitted", created_at: "2024-01-01T00:00:00.000Z" },
+        { interview_id: "iv-1", interviewer_id: "p2", status: "submitted", created_at: "2024-01-01T00:00:00.000Z" },
+      ],
     });
 
     const result = await sendConfirmationEmail(client, interview);
@@ -193,6 +207,9 @@ describe("sendConfirmationEmail", () => {
     const interview = { ...baseInterview, panel: ["p1"] };
     const { client, updateCalls } = fakeSupabase({
       panelInterviewers: [{ name: "면접관1", email: "int1@example.com" }],
+      interviewerResponses: [
+        { interview_id: "iv-1", interviewer_id: "p1", status: "submitted", created_at: "2024-01-01T00:00:00.000Z" },
+      ],
     });
 
     const result = await sendConfirmationEmail(client, interview);

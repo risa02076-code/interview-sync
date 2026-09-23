@@ -1,6 +1,7 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { requiresRoom } from "./matching";
 import { sendEmail, emailErrorReason } from "./email";
+import { computeInterviewerProgress } from "./interviewerProgress";
 import {
   MAX_INTERVIEW_DURATION_MINUTES,
   fitsInBusinessHours,
@@ -17,7 +18,8 @@ export type ViolationKind =
   | "room_double_booked"
   | "candidate_double_booked"
   | "unnotified_past_slot"
-  | "outside_business_hours";
+  | "outside_business_hours"
+  | "confirmed_without_response";
 
 export type Violation = {
   interviewId: string;
@@ -36,6 +38,13 @@ export type ConsistencyCheckInterview = {
   room_id: string | null;
   status: "confirmed" | "rescheduled" | "escalated" | "pending";
   confirmation_sent_at: string | null;
+  /**
+   * 확정된 시점 기준, 이 면접 요청(kind: "interviewer")에 아직 응답을 제출하지
+   * 않은 패널 멤버 이름. 계산에 response_requests 조회가 필요해 호출부
+   * (runConsistencyCheck·checkSingleInterviewViolations)가 채워 넣는다 — 값이
+   * 없으면(undefined) 이 검사는 건너뛴다.
+   */
+  unrespondedPanelNames?: string[];
 };
 
 /**
@@ -121,6 +130,23 @@ export function findConsistencyViolations(
           iv.matched_slot,
           duration,
         )}`,
+      });
+    }
+  }
+
+  // 자동 확정(confirmFromPriorities)은 전원 응답을 마쳐야만 실행되지만, 담당자가
+  // 히트맵을 보고 직접 확정하는 경로(manual-confirm)는 그렇지 않다 — 미응답자가
+  // 있어도 담당자가 "그래도 진행"을 선택하면 확정된다(lib/manualConfirmNote.ts).
+  // 그 순간엔 확인 절차를 거치지만, 이후 새 확정 경로가 추가되거나 데이터가 직접
+  // 수정되는 등 그 확인을 우회할 방법은 남아있다. 이 검사는 그 마지막 그물이다 —
+  // "그때 확인했는지"가 아니라 "지금도 미응답 상태로 남아있는지"를 매일 다시 본다.
+  for (const iv of confirmed) {
+    if (iv.unrespondedPanelNames?.length) {
+      violations.push({
+        interviewId: iv.id,
+        candidateName: iv.candidate_name,
+        kind: "confirmed_without_response",
+        detail: `확정됐지만 아직 응답하지 않은 면접관이 있음: ${iv.unrespondedPanelNames.join(", ")} — 이들의 '가능'은 답변이 아니라 침묵으로 추정한 것입니다`,
       });
     }
   }
@@ -223,6 +249,49 @@ export function findConsistencyViolations(
 }
 
 /**
+ * confirmed_without_response 검사에 필요한 "이 면접에 아직 응답 안 한 패널"을
+ * response_requests 조회로 채워 넣는다. findConsistencyViolations 자체는 이
+ * 조회 없이 순수하게 남겨두고(테스트가 가짜 데이터로 바로 검증할 수 있도록),
+ * DB 접근이 필요한 이 부분만 호출부 공용으로 뺐다.
+ */
+async function withUnrespondedPanel(
+  supabase: SupabaseClient,
+  interviews: ConsistencyCheckInterview[],
+): Promise<ConsistencyCheckInterview[]> {
+  const relevant = interviews.filter((iv) => iv.status === "confirmed" || iv.status === "rescheduled");
+  if (!relevant.length) return interviews;
+
+  const interviewIds = relevant.map((iv) => iv.id);
+  const panelIds = [...new Set(relevant.flatMap((iv) => iv.panel))];
+
+  const [{ data: interviewers }, { data: requests }] = await Promise.all([
+    supabase.from("interviewers").select("id,name").in("id", panelIds),
+    supabase
+      .from("response_requests")
+      .select("interview_id,interviewer_id,status,created_at")
+      .eq("kind", "interviewer")
+      .in("interview_id", interviewIds),
+  ]);
+
+  const nameById = new Map((interviewers ?? []).map((p) => [p.id, p.name as string]));
+  const requestsByInterview = new Map<string, { interviewer_id: string | null; status: string; created_at: string }[]>();
+  for (const r of requests ?? []) {
+    const list = requestsByInterview.get(r.interview_id) ?? [];
+    list.push(r);
+    requestsByInterview.set(r.interview_id, list);
+  }
+
+  return interviews.map((iv) => {
+    if (iv.status !== "confirmed" && iv.status !== "rescheduled") return iv;
+    const progress = computeInterviewerProgress(iv.panel, requestsByInterview.get(iv.id) ?? []);
+    const unrespondedPanelNames = iv.panel
+      .filter((pid) => !progress.respondedIds.has(pid))
+      .map((pid) => nameById.get(pid) ?? pid);
+    return { ...iv, unrespondedPanelNames };
+  });
+}
+
+/**
  * 확정 메일을 실제로 보내기 직전(sendConfirmationEmail)에, 이 면접 하나만 콕 집어
  * 확인한다. runConsistencyCheck처럼 전체 interviews 테이블을 다 훑는 게 아니라,
  * "이 면접과 시간이 겹칠 수 있는 건들"만 조회해서 비교 대상을 좁힌다.
@@ -258,7 +327,8 @@ export async function checkSingleInterviewViolations(
     peers = (data ?? []) as ConsistencyCheckInterview[];
   }
 
-  return findConsistencyViolations([interview, ...peers]).filter((v) => v.interviewId === interview.id);
+  const withResponses = await withUnrespondedPanel(supabase, [interview, ...peers]);
+  return findConsistencyViolations(withResponses).filter((v) => v.interviewId === interview.id);
 }
 
 /**
@@ -272,7 +342,8 @@ export async function runConsistencyCheck(supabase: SupabaseClient) {
     .select("id,candidate_name,candidate_email,interview_type,panel,matched_slot,room_id,status,confirmation_sent_at");
   if (error) throw error;
 
-  const violations = findConsistencyViolations((data ?? []) as ConsistencyCheckInterview[]);
+  const withResponses = await withUnrespondedPanel(supabase, (data ?? []) as ConsistencyCheckInterview[]);
+  const violations = findConsistencyViolations(withResponses);
 
   for (const v of violations) {
     await supabase

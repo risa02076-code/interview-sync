@@ -167,6 +167,32 @@ describe("findConsistencyViolations", () => {
     expect(violations.filter((v) => v.kind === "interviewer_double_booked")).toHaveLength(2);
   });
 
+  describe("확정됐지만 아직 응답하지 않은 면접관이 있는 경우", () => {
+    it("unrespondedPanelNames가 채워져 있으면 잡는다", () => {
+      const violations = findConsistencyViolations([base({ unrespondedPanelNames: ["배지훈"] })]);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].kind).toBe("confirmed_without_response");
+      expect(violations[0].detail).toContain("배지훈");
+    });
+
+    it("unrespondedPanelNames가 없으면(계산 안 됨) 잡지 않는다", () => {
+      const violations = findConsistencyViolations([base({})]);
+      expect(violations.filter((v) => v.kind === "confirmed_without_response")).toEqual([]);
+    });
+
+    it("unrespondedPanelNames가 빈 배열이면(전원 응답) 잡지 않는다", () => {
+      const violations = findConsistencyViolations([base({ unrespondedPanelNames: [] })]);
+      expect(violations.filter((v) => v.kind === "confirmed_without_response")).toEqual([]);
+    });
+
+    it("재조율(rescheduled)로 확정된 건에도 적용된다", () => {
+      const violations = findConsistencyViolations([
+        base({ status: "rescheduled", unrespondedPanelNames: ["오세훈"] }),
+      ]);
+      expect(violations.filter((v) => v.kind === "confirmed_without_response")).toHaveLength(1);
+    });
+  });
+
   describe("과거 시간인데 확정 메일이 발송되지 않은 경우", () => {
     const AFTER_SLOT_A = new Date("2024-01-03T00:00:00.000Z");
     const BEFORE_SLOT_A = new Date("2024-01-01T00:00:00.000Z");
