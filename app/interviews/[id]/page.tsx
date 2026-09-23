@@ -235,18 +235,19 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
     const people = interview.panelDetail.map((p) => ({
       name: p.name,
       free: !p.busy_slots.includes(slot),
+      responded: p.responded,
     }));
     const freeRoom = interview.rooms.find((r) => !r.busy_slots.includes(slot));
     return { people, needsRoom, freeRoomName: freeRoom?.name ?? null };
   }
 
-  async function handleManualConfirm() {
+  async function handleManualConfirm(confirmDespiteUnresponded = false) {
     if (!manualSlot) return;
     setBusy(true);
     const res = await fetch(`/api/interviews/${id}/manual-confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ slot: manualSlot }),
+      body: JSON.stringify({ slot: manualSlot, confirmDespiteUnresponded }),
     });
     setBusy(false);
     if (res.ok) {
@@ -254,10 +255,17 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
       setManualOpen(false);
       setManualSlot(null);
       load();
-    } else {
-      const body = await res.json();
-      setToast(body.error ?? "확정에 실패했습니다.");
+      return;
     }
+    const body = await res.json();
+    // 미응답자가 있어 보류된 경우, 화면이 조용히 실패로 넘기지 않고 그 자리에서
+    // 한 번 더 물어본다 — 되돌릴 수 없는 확정이라 sendConfirmationEmail의
+    // 정합성 보류와 같은 방식(confirm 창)을 쓴다.
+    if (body.held && confirm(`${body.error}\n\n계속 진행할까요?`)) {
+      await handleManualConfirm(true);
+      return;
+    }
+    setToast(body.error ?? "확정에 실패했습니다.");
   }
 
   async function handleInviteInterviewers() {
@@ -1001,9 +1009,17 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
                   <Badge
                     key={p.name}
                     variant="outline"
-                    className={`font-normal ${p.free ? "" : "border-destructive/40 text-destructive"}`}
+                    className={`font-normal ${
+                      !p.responded
+                        ? "border-amber-500/40 text-amber-600"
+                        : p.free
+                          ? ""
+                          : "border-destructive/40 text-destructive"
+                    }`}
                   >
-                    {p.name} {p.free ? "✔ 가능" : "✘ 불가능"}
+                    {/* 미응답자는 busy_slots에 걸린 게 없어 free===true로 계산되지만, 그건
+                        "가능"이 아니라 답을 안 한 것뿐이다 — free보다 먼저 확인해야 한다. */}
+                    {p.name} {!p.responded ? "❓ 미응답(추정)" : p.free ? "✔ 가능" : "✘ 불가능"}
                   </Badge>
                 ))}
               </div>
@@ -1021,7 +1037,7 @@ export default function InterviewDetailPage({ params }: { params: Promise<{ id: 
             </div>
           )}
           <div className="flex justify-end">
-            <Button size="sm" disabled={!manualSlot || busy} onClick={handleManualConfirm}>
+            <Button size="sm" disabled={!manualSlot || busy} onClick={() => handleManualConfirm()}>
               {busy ? "확정 중..." : "이 시간으로 확정"}
             </Button>
           </div>

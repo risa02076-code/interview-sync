@@ -4,6 +4,8 @@ import { confirmInterviewAtomically } from "@/lib/confirmInterview";
 import { requiresRoom } from "@/lib/matching";
 import { isRoomUsable, type ManagedRoom } from "@/lib/rooms";
 import { interviewDurationMinutes, occupiedSlots } from "@/lib/slots";
+import { computeInterviewerProgress } from "@/lib/interviewerProgress";
+import { resolveManualConfirmNote } from "@/lib/manualConfirmNote";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,7 +17,10 @@ type Params = { params: Promise<{ id: string }> };
  */
 export async function POST(request: Request, { params }: Params) {
   const { id } = await params;
-  const { slot } = (await request.json()) as { slot: string };
+  const { slot, confirmDespiteUnresponded } = (await request.json()) as {
+    slot: string;
+    confirmDespiteUnresponded?: boolean;
+  };
   if (!slot) return NextResponse.json({ error: "시간을 선택해주세요." }, { status: 400 });
 
   const supabase = createAdminClient();
@@ -35,9 +40,26 @@ export async function POST(request: Request, { params }: Params) {
   // 캘린더에도 남기지 않아 다음 조율에서 또 겹치는 일정이 잡힌다.
   const span = occupiedSlots(slot, interviewDurationMinutes(interview.interview_type));
 
-  const conflicts = (panel ?? [])
-    .filter((p) => span.some((s: string) => p.busy_slots.includes(s)))
-    .map((p) => p.name);
+  // 히트맵의 "가능"에는 실제 답변과 미응답(침묵)이 똑같은 초록색으로 섞여 있다 —
+  // 담당자가 그 구분을 화면에서 놓치면 확정된 뒤엔 그 사실이 사라진다. 누가 아직
+  // 응답 안 했는지는 사람이 알아채는 데 기대지 않고 여기서 기계적으로 계산한다
+  // (lib/manualConfirmNote.ts).
+  const { data: interviewerRequests } = await supabase
+    .from("response_requests")
+    .select("interviewer_id,status,created_at")
+    .eq("interview_id", id)
+    .eq("kind", "interviewer");
+  const progress = computeInterviewerProgress((interview.panel as string[]) ?? [], interviewerRequests ?? []);
+
+  // note에 남기는 것만으로는 담당자가 화면을 안 보고 지나칠 수 있다. 그래서 미응답자가
+  // 있으면 여기서 먼저 멈춰 세운다 — sendConfirmationEmail의 정합성 보류(held)와 같은
+  // 패턴이다. 문제없다고 판단하면 confirmDespiteUnresponded로 다시 불러 진행한다.
+  const noteResult = resolveManualConfirmNote(panel ?? [], span, progress.respondedIds, confirmDespiteUnresponded === true);
+  if (!noteResult.ok) {
+    return NextResponse.json({ error: noteResult.error, held: true }, { status: 409 });
+  }
+  const note = noteResult.note;
+
   // 담당자가 시간을 직접 고르더라도 면접실은 자동으로 잡는다. 그래서 자동 매칭과
   // 같은 기준을 쓴다 — 사용 안 함으로 표시됐거나 인원이 안 들어가는 방을 조용히
   // 배정하면, 사람이 고른 것도 아니면서 규칙만 어긴 결과가 남는다.
@@ -61,9 +83,7 @@ export async function POST(request: Request, { params }: Params) {
       span,
       roomId: freeRoom?.id ?? null,
       status: "confirmed",
-      note: conflicts.length
-        ? `리크루터가 직접 확정함 (겹침: ${conflicts.join(", ")})`
-        : "리크루터가 직접 확정함",
+      note,
       stage: "candidate_done",
       resetConfirmation: true,
       force: true,
