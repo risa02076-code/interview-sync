@@ -11,7 +11,7 @@
 -- 코드 전반의 식별자 변경이 따라오는데, 사용자에게 보이지 않는 이름이라 그 위험을
 -- 감수할 이유가 없다. 표기 통일은 "사람이 읽는 곳"까지만 한다.
 
-create or replace view interviews_readable as
+create or replace view interviews_readable with (security_invoker = on) as
 select
   i.id,
   i.candidate_name as 후보자,
@@ -37,7 +37,7 @@ from interviews i
 left join rooms r on r.id = i.room_id
 order by i.created_at desc;
 
-create or replace view rooms_readable as
+create or replace view rooms_readable with (security_invoker = on) as
 select
   r.id,
   r.name as 면접실,
