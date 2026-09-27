@@ -2,6 +2,7 @@
 
 - **작동 링크**: https://interview-sync-nu.vercel.app/interviews
 - **소스 코드**: https://github.com/risa02076-code/interview-sync
+- **문서**: [도입 제안서](docs/인터뷰싱크_도입제안서.pdf) · [리스크 관리](docs/인터뷰싱크_리스크관리.pdf) — 현업 도입 검토용. 기대 효과·비용, 위험 요인과 대응 현황
 - **개선 사항 한 줄**: 클라이언트가 Supabase를 직접 호출하던 이전 방식 대신 Next.js API 라우트를 백엔드 계층으로 분리했고, 이후 Gmail 발송 → 응답 링크 제출 → 자동 매칭까지 사람 개입 없이 이어지는 이메일 기반 조율 파이프라인으로 확장함
 
 ---
