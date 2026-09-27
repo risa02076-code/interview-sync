@@ -38,7 +38,7 @@ alter table rooms add constraint rooms_capacity_positive
   check (capacity is null or capacity > 0);
 
 -- 사람이 Table Editor에서 직접 훑어볼 때 쓰는 읽기 전용 뷰에도 새 컬럼을 반영한다.
-create or replace view rooms_readable as
+create or replace view rooms_readable with (security_invoker = on) as
 select
   r.id,
   r.name as 회의실,

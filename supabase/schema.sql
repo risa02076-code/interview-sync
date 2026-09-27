@@ -111,7 +111,7 @@ insert into rooms (name) values
 -- interviews 원본은 면접관을 UUID 배열로, 시간을 UTC로 저장해 그대로 보면 안 읽힌다.
 -- 앱 코드는 계속 원본(interviews)을 그대로 쓰고, 이 뷰는 사람이 볼 때만 참고한다.
 -- 자세한 내용은 migration_readable_view.sql 참고.
-create or replace view interviews_readable as
+create or replace view interviews_readable with (security_invoker = on) as
 select
   i.id,
   i.candidate_name as 후보자,

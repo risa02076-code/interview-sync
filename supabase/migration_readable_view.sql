@@ -6,7 +6,7 @@
 -- 창을 하나 더 만드는 것이다 — Table Editor 왼쪽 목록에 "interviews_readable"로
 -- interviews와 나란히 뜬다.
 
-create or replace view interviews_readable as
+create or replace view interviews_readable with (security_invoker = on) as
 select
   i.id,
   i.candidate_name as 후보자,
