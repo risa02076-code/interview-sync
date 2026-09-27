@@ -1,0 +1,24 @@
+# 부품(패키지)의 고친 버전이 나오면 GitHub이 자동으로 교체 PR을 만들어준다.
+#
+# CI의 Dependency audit 단계는 "코드를 올릴 때"만 검사하므로, 한동안 push가 없으면
+# 그사이 새로 공개된 결함을 모른다. Dependabot은 push와 무관하게 결함 목록을
+# 감시하고, 보안 수정은 일정과 상관없이 바로 PR을 연다.
+#
+# 단순 기능 업데이트는 급하지 않아서 한 달에 한 번, 하나의 PR로 묶어 받는다.
+# 이 PR도 CI(lint·타입 검사·테스트·audit)를 통과해야 머지할 수 있다.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    groups:
+      dependencies:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
