@@ -27,6 +27,13 @@ jobs:
       # package-lock.json 그대로 설치한다(개발 환경과 같은 버전으로 검증하기 위함).
       - run: npm ci
 
+      # 우리 코드가 아니라 가져다 쓰는 부품(패키지)이 공개 결함 목록에 올라 있는지 본다.
+      # 이 단계가 없던 동안 next·nodemailer 취약점 4건(최고 위험도 1건)이 사람이
+      # 직접 npm audit을 돌리기 전까지 아무도 모르게 쌓여 있었다.
+      # 실제 서비스에 들어가는 부품만(--omit=dev), 높음 이상일 때만 실패시킨다.
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Lint
         run: npm run lint
 
